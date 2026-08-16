@@ -1,0 +1,41 @@
+# Normalize line endings: LF in the repo, on every platform.
+# Prevents a Windows checkout from turning the whole tree into a diff.
+* text=auto eol=lf
+
+# Shell scripts must stay LF even if a tool guesses otherwise.
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Lockfiles: generated. Keep them out of diffs and code review,
+# but they are still tracked and still merged.
+package-lock.json  -diff linguist-generated
+pnpm-lock.yaml     -diff linguist-generated
+yarn.lock          -diff linguist-generated
+
+# Better hunk headers when diffing these languages.
+*.ts    diff=typescript
+*.tsx   diff=typescript
+*.js    diff=javascript
+*.jsx   diff=javascript
+*.md    diff=markdown
+*.css   diff=css
+*.html  diff=html
+
+# Binary — never try to merge or text-diff these.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.zip   binary
+*.gz    binary
