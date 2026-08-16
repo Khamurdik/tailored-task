@@ -43,7 +43,7 @@ record the README deliverable asks for.
 | L3 | [`files`](apps/api/src/files/TODO.md) | Upload lifecycle orchestration. Binds `nodes` to `storage`. |
 | L3 | [`search`](apps/api/src/search/TODO.md) | Name search scoped to a room. *Optional / extra credit.* |
 | L4 | [`audit`](apps/api/src/audit/TODO.md) | Append-only event log. **Deferred — do not implement.** |
-| L4 | [`jobs`](apps/api/src/jobs/TODO.md) | Scheduled cleanup: orphan uploads, expired shares, rollup drift. |
+| L4 | [`jobs`](apps/api/src/jobs/TODO.md) | Scheduled cleanup as queryable job objects: every run has a status, every job can be triggered by hand. |
 
 ### Frontend — `apps/web/src/`
 

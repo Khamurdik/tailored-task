@@ -23,7 +23,11 @@ below, not through a request.
 
 ## Responsibilities
 - [ ] Schema: `id`, `email` (citext, unique), `password_hash` (nullable),
-      `name`, `google_sub` (nullable, unique), `created_at`
+      `name`, `google_sub` (nullable, unique), `is_admin` (boolean, default
+      false), `created_at`
+- [ ] `is_admin` gates the `jobs` endpoints and nothing else today. It is set
+      only by the seeder — there is no endpoint that grants it, and no way for a
+      user to escalate into it
 - [ ] Case-insensitive email lookup — use `citext`, not `lower()` at every call site
 - [ ] `linkGoogleSub(userId, sub)` — called by `auth` on first Google login
 - [ ] Emit `user.created` from the seeder so `sharing` can bind pending
@@ -59,8 +63,9 @@ workflow where it was wanted.
 - [ ] Format: a JSON array, so names and passwords containing `:` or `,` are not
       a parsing problem
       ```
-      SEED_USERS='[{"email":"ana@corp.com","password":"…","name":"Ana"}]'
+      SEED_USERS='[{"email":"ana@corp.com","password":"…","name":"Ana","admin":true}]'
       ```
+      `admin` is optional and defaults to false
 - [ ] Hash each password with the **same** argon2id parameters `auth` uses.
       Import the helper rather than re-declaring the parameters — divergence
       here means seeded users cannot log in, and the failure looks like a wrong
@@ -102,6 +107,8 @@ This is why `sharing` also binds pending grants at login time — see
 - [ ] A seeded user's hash verifies against `auth`'s comparison function —
       this is the test that catches parameter drift
 - [ ] A malformed `SEED_USERS` fails the run with a readable error
+- [ ] A user seeded without `admin` gets `is_admin = false`, and re-seeding
+      never silently promotes an existing user
 
 ## Done when
 `pnpm db:migrate` on an empty database yields exactly the users listed in

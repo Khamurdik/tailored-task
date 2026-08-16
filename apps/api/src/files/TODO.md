@@ -10,7 +10,8 @@ The `pending → active` transition and its failure modes.
 ## Public surface
 - `FilesController`: `/uploads/init`, `/uploads/:id/complete`, `/uploads/:id/abort`,
   `/nodes/:id/content-url`
-- `FilesService.reapPending(olderThan)` — called by `jobs`
+- `FilesService.reapPending(olderThan)` → `{ scanned, deleted }` — called by
+  `jobs`, which records the counts as the run's result
 
 ## Depends on
 `common`, `nodes`, `storage`, `access` (guards).
@@ -31,7 +32,8 @@ The `pending → active` transition and its failure modes.
   - [ ] Flip to `active`, bump ancestor rollups
 - [ ] `POST /uploads/:id/abort` — best-effort cleanup on user cancel
 - [ ] `GET /nodes/:id/content-url` — permission-checked, 60s presigned GET
-- [ ] `reapPending` — delete `pending` nodes older than 1h
+- [ ] `reapPending` — delete `pending` nodes older than 1h, returning the counts
+      so a job run reports what it actually did rather than just "succeeded"
 
 ## The four states
 Only one is the happy path. Handle all four explicitly.

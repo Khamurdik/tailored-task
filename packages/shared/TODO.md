@@ -21,6 +21,11 @@ The wire format.
 - [ ] Node schemas: `NodeSummary`, `NodeDetail`, `Breadcrumb`, `ChildrenPage`
 - [ ] Upload schemas: `InitUploadRequest/Response`, `CompleteUploadRequest`
 - [ ] Share schemas: `CreateShareRequest`, `ShareSummary`
+- [ ] Job schemas: `JobSummary` (definition + `lastRun` + `nextRunAt`),
+      `JobRunSummary`, `JobRunDetail`, `TriggerJobResponse` `{ runId }`, and the
+      `JobStatus` union (`running | succeeded | failed | timed_out | skipped |
+      interrupted`). `nextRunAt` is an ISO string on the wire — never a Luxon
+      `DateTime`, which is what `cron@4` hands the API internally
 - [ ] Auth schemas: `LoginRequest` `{ email, password }`,
       `GoogleLoginRequest` `{ idToken }`, `RefreshRequest` `{ refreshToken }`,
       `TokenPair` `{ accessToken, refreshToken }`, `SessionUser`.
