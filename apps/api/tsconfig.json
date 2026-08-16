@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "outDir": "./dist",
+
+    // NestJS dependency injection reads design:paramtypes, which only exists
+    // when both of these are on. Turning either off breaks the injector at
+    // runtime with "Nest can't resolve dependencies", not at compile time.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    // Decorated constructor params and DTO fields are assigned by the
+    // framework, not by the constructor body.
+    "strictPropertyInitialization": false,
+
+    // ts-jest and the Nest CLI both consume the emitted JS; isolatedModules
+    // would force `export type` churn across every barrel file for no gain here.
+    "isolatedModules": false,
+
+    "types": ["node", "jest"],
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "prisma/**/*.ts"]
+}

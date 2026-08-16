@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    // Vite transpiles file-by-file, so type-only imports must be erasable
+    // without whole-program knowledge.
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "types": ["vite/client"],
+
+    // Resolved relative to this file — no "baseUrl", which TypeScript 7
+    // removes. Must stay in sync with resolve.alias in vite.config.ts.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}

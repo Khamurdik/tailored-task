@@ -1,0 +1,20 @@
+// Datasource and generator only. The models are deliberately not written yet:
+// the `nodes` table shape and its five indexes are still unspecified — see
+// PROJECT-ANALYSIS.md §6.2 and apps/api/src/nodes/TODO.md.
+//
+// Staying on Prisma 6 (not 7) is a compatibility decision — see docs/TOOLCHAIN.md.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+
+  // citext  — case-insensitive email lookup without lower() at every call site
+  //           (users/TODO.md)
+  // pg_trgm — GIN index behind room-scoped name search (search/TODO.md)
+  extensions = [citext, pg_trgm]
+}

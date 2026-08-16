@@ -1,0 +1,16 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 10+ blocks dependency lifecycle scripts by default. Anything that needs
+# a postinstall to fetch a native binary or generate code MUST be listed here,
+# or it fails at runtime with a confusing "engine not found" / "module not
+# found" error rather than at install time.
+onlyBuiltDependencies:
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - "@tailwindcss/oxide"
+  - "@swc/core"
+  - esbuild
+  - unrs-resolver
