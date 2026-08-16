@@ -7,6 +7,9 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first — it is the only
 document that describes the system as a whole. Everything else is scoped to a
 single module on purpose.
 
+Picking this up cold? [`HANDOFF.md`](HANDOFF.md) carries the decision log, the
+version research, and the list of questions still open.
+
 ## How to use these files
 
 Each `TODO.md` follows the same shape:
