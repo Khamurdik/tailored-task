@@ -14,6 +14,10 @@ Nothing. All state belongs to `access`.
 ## Depends on
 `common`, `access`, `users`, `nodes` (read only, to display names).
 
+Does **not** depend on `auth`. The login-time claim is driven by an event
+`auth` emits (`user.authenticated`), not by `auth` calling into this module —
+otherwise L2 would depend on L3.
+
 ## Must not depend on
 `files`. Sharing a file and uploading a file are unrelated concerns.
 
@@ -21,9 +25,17 @@ Nothing. All state belongs to `access`.
 - [ ] `POST /nodes/:id/shares` — guarded by `@RequireAccess('own')`
 - [ ] Public link: 32 CSPRNG bytes, base64url; store **SHA-256 of the token**,
       return the plaintext exactly once
-- [ ] User grant: by email. If no account exists, store `principal_email` and
-      bind on `user.registered`. Without this, "share with a colleague" only
-      works for people who already signed up.
+- [ ] User grant: by email. If no account exists yet, store `principal_email`
+      and bind when that user is provisioned. Without this, "share with a
+      colleague" only works for people an operator has already seeded.
+- [ ] **Binding a pending grant — two triggers, not one.** There is no
+      registration, so users appear via the seeder or a manual `INSERT`:
+  - [ ] Listener on `user.created` (emitted by the seeder) — the fast path
+  - [ ] Claim on successful login, matching `principal_email` to the actor's
+        email — the guarantee. A row inserted by raw SQL emits no event, so the
+        listener alone would leave those grants pending forever
+  - [ ] Both go through one `claimPendingGrants(userId, email)` method, so the
+        two paths cannot drift
 - [ ] `GET /nodes/:id/shares` — grants on this node **and** inherited ones,
       visibly distinguished, so the owner can see why something is exposed
 - [ ] `DELETE /shares/:id` — sets `revoked_at`; effective immediately
@@ -51,7 +63,9 @@ State this in the README — reviewers poke at exactly this.
 - [ ] **Scoping**: a grant on folder B, then request sibling folder C's id with
       B's token → 404 (not 403, not 200)
 - [ ] Cascade delete of a parent revokes grants on descendants
-- [ ] Invite an unregistered email, register that email, grant becomes active
+- [ ] Invite an email with no user row, seed that user, grant becomes active
+- [ ] Invite an email with no user row, insert that user with **raw SQL**, then
+      log in — the grant binds on login even though no event fired
 - [ ] The stored token is not the token that was returned
 
 ## Done when

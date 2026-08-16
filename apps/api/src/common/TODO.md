@@ -25,6 +25,11 @@ Anything. If a helper needs a domain type, it belongs in that domain module.
 
 ## Responsibilities
 - [ ] Zod config schema; **crash at boot** on a missing var with a readable message
+  - [ ] `SEED_USERS` parses as a JSON array of `{ email, password, name }` and
+        is validated by the same schema the seeder uses
+  - [ ] `GOOGLE_CLIENT_ID` is optional — a checkout without Google credentials
+        must still boot and serve password login
+  - [ ] No cookie secret and no CSRF secret. This API sets no cookies
 - [ ] `PrismaService` with `onModuleInit` connect and graceful shutdown hook
 - [ ] Global exception filter mapping `P2002 → 409 NAME_CONFLICT` (carrying
       `suggestedName`) and `P2025 → 404 NOT_FOUND`

@@ -4,8 +4,9 @@ An independent read of this repository: what it is, how it is put together, what
 its design actually commits to, and where the specification is incomplete or
 contradicts itself.
 
-*Scope of the analysis: all 22 markdown files, 1,249 lines. There is no source
-code, no build tooling, and no version control in the tree.*
+*Originally written against the 22-file, code-free skeleton. Kept current as
+the design changes — the auth model was revised after the first pass, and §4
+and §6 reflect that revision.*
 
 ---
 
@@ -19,10 +20,12 @@ What exists today is not the product. It is a **design skeleton**: a directory
 layout in which every leaf is a `TODO.md` acting as a module contract. Each one
 declares purpose, owned state, public surface, allowed and forbidden
 dependencies, a responsibility checklist, invariants, tests, and an acceptance
-bar. No `package.json`, no `tsconfig`, no Prisma schema, no CI, no `.git`.
+bar.
 
-The intended target stack is legible from the specs even though it is never
-declared in one place:
+The repository has since gained its toolchain — a pnpm workspace, tsconfigs, a
+Prisma datasource, and pinned dependencies (see
+[docs/TOOLCHAIN.md](docs/TOOLCHAIN.md)) — but still no application source. The
+target stack was legible from the specs before it was ever declared:
 
 | Layer | Choice | Where it is implied |
 | --- | --- | --- |
@@ -65,7 +68,7 @@ source of truth, `path` a rebuildable index.
 
 ## 3. Structure
 
-### Backend — five layers, 11 modules
+### Backend — five layers, 11 modules (10 in scope; `audit` is deferred)
 
 ```
 L4   jobs          audit                 reactive / scheduled
@@ -88,7 +91,7 @@ to compose at the route level rather than import each other.
 
 ---
 
-## 4. The three decisions worth pointing at
+## 4. The four decisions worth pointing at
 
 These are the parts a reviewer would actually probe, and each is already argued
 for in the text.
@@ -108,6 +111,22 @@ port with a five-field `NodeSnapshot` and never imports `nodes`;
 stated rule — *no `forwardRef` anywhere; if you reach for one, a boundary is
 wrong* — is the useful part. It converts a style preference into a falsifiable
 check.
+
+**Provisioned identity, and no cookies.** Two choices that travel together.
+There is no registration: users are seeded from `.env`, and Google sign-in
+*links* to an existing account rather than creating one — which is the only
+thing stopping a public OAuth button from becoming a public signup form. And
+credentials are bearer tokens in `localStorage`, not cookies.
+
+The second is the one a reviewer will push on, so it is worth being precise
+about the trade. It buys the elimination of an entire vulnerability class —
+with no ambient credential, CSRF has no mechanism — plus mobile and non-browser
+clients that need no cookie jar, and it deletes the `SameSite=None` problem that
+a Vercel-plus-App-Runner split would otherwise force. It costs the one thing an
+httpOnly cookie is actually good at: a successful XSS can read the token. That
+makes the strict CSP, the 15-minute access TTL, and server-side revocation on
+logout load-bearing rather than nice-to-have. The spec says so plainly, which is
+the right way to hold a trade like this.
 
 **Denial is 404, never 403.** A 403 confirms an id exists, which is an
 enumeration oracle across every room in the system. Paired with a `SessionGuard`
@@ -137,9 +156,12 @@ semantics.
 because App Runner polls every ~10s and a DB query there stops Neon scaling to
 zero. Depth is capped at 32 because a btree entry maxes near 2,704 bytes and a
 UUID path segment is 37 chars, so an uncapped tree dies at ~73 levels with a raw
-Postgres error. The cross-domain refresh-cookie trap gets a preferred fix (a
-Vercel rewrite making cookies first-party) *and* the fallback. None of these are
-things you write before having hit them.
+Postgres error. None of these are things you write before having hit them.
+
+The cross-domain cookie problem that an earlier revision solved with a Vercel
+rewrite has since been removed rather than solved: auth now uses bearer tokens
+in `localStorage`, so there is no ambient credential and CSRF has no mechanism.
+That trade is discussed in §4.
 
 **Unicode is treated as a first-class correctness concern**, not an
 afterthought: NFC normalization before uniqueness checks, `citext` for email,
@@ -172,9 +194,9 @@ would cost to discover during implementation instead of now.
 
 | # | Issue | Where |
 | --- | --- | --- |
-| 1 | **Who listens to `node.deleted`?** `nodes` says the event is emitted "so `access` can revoke grants". `sharing` says it owns the listener (`SharingService.revokeSubtree`), and the README agrees. Two modules are specified as the subscriber; only one can be. | [nodes:40](apps/api/src/nodes/TODO.md#L40) vs [sharing:30](apps/api/src/sharing/TODO.md#L30) |
+| 1 | **Who listens to `node.deleted`?** `nodes` says the event is emitted "so `access` can revoke grants". `sharing` says it owns the listener (`SharingService.revokeSubtree`), and the README agrees. Two modules are specified as the subscriber; only one can be. **Still open.** | [nodes:40](apps/api/src/nodes/TODO.md#L40) vs [sharing:30](apps/api/src/sharing/TODO.md#L30) |
 | 2 | **`common` cannot depend on nothing.** Its stated dependencies are "Nothing" and "Must not depend on: Anything", yet it must import `zod` (config schema) and the `ErrorCode` union from `packages/shared`. The intent is clearly *no domain modules*; as written it is false. | [common:20-24](apps/api/src/common/TODO.md#L20-L24) |
-| 3 | **`audit` needs `access`.** It exposes `GET /nodes/:id/activity`, "owner only" — which requires the access guard — while declaring `common` as its only dependency and "nothing imports it" as an invariant. A guarded controller breaks the pure-listener framing. | [audit:13-21](apps/api/src/audit/TODO.md#L13-L21) |
+| 3 | ~~**`audit` needs `access`.**~~ **Resolved by deferral.** `audit` is now explicitly out of scope, and the contradiction is recorded in the file for whoever picks it up. | [audit](apps/api/src/audit/TODO.md) |
 | 4 | **Feature folders and `public-view`.** The architecture says feature folders never import each other and compose at the route level; `public-view` lists `explorer` and `viewer` as dependencies. Defensible, since `public-view` *is* a route — but the rule and the dependency list contradict each other textually. | [ARCHITECTURE:128](docs/ARCHITECTURE.md#L128) vs [public-view:13](apps/web/src/features/public-view/TODO.md#L13) |
 | 5 | **`ARCHITECTURE.md` is duplicated verbatim** at the repo root and in `docs/`. Byte-identical today; guaranteed to diverge. Every cross-reference points at the `docs/` copy, so the root copy is the one to delete. | root vs `docs/` |
 
@@ -185,14 +207,12 @@ would cost to discover during implementation instead of now.
   contains no DDL and no index list. The single most important table in the
   system, and its shape and every index are unspecified. This is the largest
   hole in the tree.
-- **No event bus owner.** Five events are specified (`user.registered`,
-  `node.created`, `node.moved`, `node.deleted`, `share.created`, `share.revoked`,
-  `file.viewed`) and the entire decoupling story depends on them, but no module
-  provides the emitter and no file defines the payloads. `common` is the natural
-  home; its public surface doesn't mention it.
-- **`file.viewed` has no emitter.** `audit` subscribes to it; `files` — which
-  owns `/nodes/:id/content-url`, the only place a view can be observed — lists no
-  events at all.
+- **No event bus owner.** Four events are now specified (`user.created`,
+  `user.authenticated`, `node.deleted`, and the node lifecycle events that
+  `audit` would have consumed) and the decoupling story depends on them, but no
+  module provides the emitter and no file defines the payloads. `common` is the
+  natural home; its public surface doesn't mention it. This is the last
+  unresolved seam.
 - **Versioning is half-present.** The storage key scheme is
   `rooms/{rootId}/{nodeId}/{versionId}` and `files` states "never delete an
   object referenced by any file version", but no module owns a versions table and

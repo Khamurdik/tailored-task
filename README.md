@@ -35,22 +35,22 @@ record the README deliverable asks for.
 | --- | --- | --- |
 | L0 | [`common`](apps/api/src/common/TODO.md) | Config, Prisma client, error envelope, pagination, string handling. No domain logic. |
 | L1 | [`storage`](apps/api/src/storage/TODO.md) | Blob storage adapter. Presigned URLs, head, delete. Knows nothing about the tree. |
-| L1 | [`users`](apps/api/src/users/TODO.md) | User records, lookup by email, pending-invite claim on signup. |
+| L1 | [`users`](apps/api/src/users/TODO.md) | User records and lookup. Provisioned from `.env` by the seeder — no signup. |
 | L1 | [`nodes`](apps/api/src/nodes/TODO.md) | The tree. Rooms, folders, files as one table. Paths, naming, moves, stats. |
-| L2 | [`auth`](apps/api/src/auth/TODO.md) | Credentials, tokens, session guards. Identity only — never authorization. |
+| L2 | [`auth`](apps/api/src/auth/TODO.md) | Password + Google login, bearer tokens, session guards. Identity only — never authorization. |
 | L2 | [`access`](apps/api/src/access/TODO.md) | Grants storage + permission resolution + route guards. |
 | L3 | [`sharing`](apps/api/src/sharing/TODO.md) | Share use-cases: issue links, invite users, revoke, cascade. |
 | L3 | [`files`](apps/api/src/files/TODO.md) | Upload lifecycle orchestration. Binds `nodes` to `storage`. |
 | L3 | [`search`](apps/api/src/search/TODO.md) | Name search scoped to a room. *Optional / extra credit.* |
-| L4 | [`audit`](apps/api/src/audit/TODO.md) | Append-only event log. Listener only. *Optional.* |
+| L4 | [`audit`](apps/api/src/audit/TODO.md) | Append-only event log. **Deferred — do not implement.** |
 | L4 | [`jobs`](apps/api/src/jobs/TODO.md) | Scheduled cleanup: orphan uploads, expired shares, rollup drift. |
 
 ### Frontend — `apps/web/src/`
 
 | Module | One-line responsibility |
 | --- | --- |
-| [`shared`](apps/web/src/shared/TODO.md) | API client, error mapping, query keys, UI primitives. |
-| [`features/auth`](apps/web/src/features/auth/TODO.md) | Login, register, session bootstrap, route protection. |
+| [`shared`](apps/web/src/shared/TODO.md) | API client, token store, error mapping, query keys, UI primitives. |
+| [`features/auth`](apps/web/src/features/auth/TODO.md) | Login (password + Google), session bootstrap, route protection. |
 | [`features/explorer`](apps/web/src/features/explorer/TODO.md) | Browse, breadcrumbs, create, rename, move, delete. |
 | [`features/uploads`](apps/web/src/features/uploads/TODO.md) | Transfer queue, dropzone, progress panel. Client-side state, not server state. |
 | [`features/viewer`](apps/web/src/features/viewer/TODO.md) | PDF preview. |
@@ -69,7 +69,21 @@ record the README deliverable asks for.
 common → storage → users → nodes → auth → access → sharing → files
        → web/shared → web/auth → web/explorer → web/uploads
        → web/sharing → web/public-view → web/viewer
-       → jobs → search → audit
+       → jobs → search
 ```
 
-`search` and `audit` are extra credit. Cut them before cutting anything else.
+`search` is extra credit. `audit` is **deferred and out of scope** — third
+priority, behind `jobs` and `search`. Cut `search` before cutting anything in
+the core path.
+
+## Authentication at a glance
+
+- **No registration.** Users are provisioned from `.env` by the Prisma seed
+  step, which runs as part of `db:migrate`.
+- **Email and password is primary**, hashed with argon2id.
+- **Google login is secondary** and links to an existing account. It never
+  creates one.
+- **No cookies.** Bearer tokens in `localStorage`, refresh token in the request
+  body — so CSRF cannot occur and mobile clients need no cookie jar. The
+  trade-off (XSS can read the token) and its mitigations are written down in
+  [`apps/api/src/auth/TODO.md`](apps/api/src/auth/TODO.md).

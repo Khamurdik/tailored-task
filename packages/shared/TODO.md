@@ -21,12 +21,18 @@ The wire format.
 - [ ] Node schemas: `NodeSummary`, `NodeDetail`, `Breadcrumb`, `ChildrenPage`
 - [ ] Upload schemas: `InitUploadRequest/Response`, `CompleteUploadRequest`
 - [ ] Share schemas: `CreateShareRequest`, `ShareSummary`
-- [ ] Auth schemas: register, login, session
+- [ ] Auth schemas: `LoginRequest` `{ email, password }`,
+      `GoogleLoginRequest` `{ idToken }`, `RefreshRequest` `{ refreshToken }`,
+      `TokenPair` `{ accessToken, refreshToken }`, `SessionUser`.
+      **No register schema** — there is no registration endpoint
 - [ ] Error codes:
       ```ts
       'NAME_CONFLICT' | 'GONE' | 'CYCLIC_MOVE' | 'DEPTH_LIMIT'
       | 'FILE_TOO_LARGE' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'RATE_LIMITED'
       ```
+      One code covers every login failure. Splitting it into
+      `BAD_PASSWORD` / `NO_SUCH_USER` would hand the client an email oracle that
+      the API is deliberately built to withhold
 - [ ] Serve as the API `ValidationPipe` schema and the client parse schema —
       one definition, both ends
 

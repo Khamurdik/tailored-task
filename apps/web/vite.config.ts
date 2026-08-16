@@ -18,9 +18,9 @@ export default defineConfig({
 
   server: {
     port: 5173,
-    // Mirrors the Vercel rewrite the deployment plan prefers: the API is
-    // same-origin in dev too, so the refresh cookie stays first-party and
-    // SameSite=Lax works identically in dev and prod. See apps/api/src/auth.
+    // Same-origin API in dev, matching the Vercel rewrite in prod. Auth uses
+    // bearer tokens rather than cookies, so this is about keeping one base URL
+    // across environments — not a credentials workaround.
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

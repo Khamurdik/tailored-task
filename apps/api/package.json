@@ -2,7 +2,7 @@
   "name": "@dataroom/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Data room API — NestJS 11 + Prisma 6 + PostgreSQL",
+  "description": "Data room API \u2014 NestJS 11 + Prisma 6 + PostgreSQL",
   "engines": {
     "node": ">=26.0.0"
   },
@@ -24,7 +24,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:seed": "prisma db seed"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1111.0",
@@ -39,7 +40,7 @@
     "@nestjs/throttler": "6.5.0",
     "@node-rs/argon2": "2.1.0",
     "@prisma/client": "6.19.3",
-    "cookie-parser": "1.4.7",
+    "google-auth-library": "11.0.2",
     "helmet": "8.3.0",
     "nestjs-zod": "5.5.0",
     "reflect-metadata": "0.2.2",
@@ -51,7 +52,6 @@
     "@nestjs/cli": "11.0.24",
     "@nestjs/schematics": "11.1.0",
     "@nestjs/testing": "11.2.1",
-    "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
     "@types/jest": "30.0.0",
     "@types/node": "26.2.0",
@@ -66,18 +66,37 @@
     "typescript-eslint": "8.67.0"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
-    "roots": ["<rootDir>/src", "<rootDir>/test"],
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/test"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "testEnvironment": "node",
     "transform": {
-      "^.+\\.ts$": ["ts-jest", { "tsconfig": "<rootDir>/tsconfig.json" }]
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": "<rootDir>/tsconfig.json"
+        }
+      ]
     },
     "moduleNameMapper": {
       "^@dataroom/shared$": "<rootDir>/../../packages/shared/src/index.ts"
     },
-    "collectCoverageFrom": ["src/**/*.ts", "!src/**/*.module.ts", "!src/main.ts"],
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/**/*.module.ts",
+      "!src/main.ts"
+    ],
     "coverageDirectory": "coverage"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.ts"
   }
 }

@@ -93,8 +93,10 @@ one, a boundary is wrong.
 ```
   ValidationPipe          zod schema from packages/shared
         ↓
-  SessionGuard            auth/ — attaches req.actor, NEVER throws on missing
-        ↓                         token (anonymous share visitors are valid)
+  SessionGuard            auth/ — reads Authorization: Bearer or
+        ↓                         X-Share-Token, attaches req.actor, NEVER
+                                  throws on a missing token (anonymous share
+                                  visitors are valid)
   NodeAccessGuard         access/ — loads snapshot + grants, resolves role,
         ↓                           attaches req.access, 404s on denial
   Controller              L3
@@ -104,13 +106,30 @@ one, a boundary is wrong.
   PrismaExceptionFilter   common/ — P2002 → 409 NAME_CONFLICT, P2025 → 404
 ```
 
-Two rules that fall out of this and matter more than they look:
+Three rules that fall out of this and matter more than they look:
 
 1. **`SessionGuard` returns `null` rather than 401.** The same endpoint serves
    an owner with a JWT and an anonymous visitor with `X-Share-Token`. Routes
    requiring a real user say so via `@RequireAuth()`.
 2. **Denial is 404, never 403.** A 403 confirms the id exists, which is an
    enumeration oracle across every room in the system.
+3. **No cookies anywhere.** Credentials travel in the `Authorization` header and
+   the refresh token travels in a request body. Nothing in the pipeline reads or
+   writes `Set-Cookie`, so CSRF has no mechanism to exploit and non-browser
+   clients need no special handling.
+
+## Identity: provisioned, not self-service
+
+There is no registration. Users are created from `.env` by the Prisma seed step
+(`users/TODO.md` explains why a plain SQL migration cannot do it: Prisma
+migrations are static checksummed SQL with no access to `process.env`, and
+Postgres cannot compute an argon2id hash). Email and password is the primary
+login; a provisioned user may additionally sign in with Google, which **links to
+an existing account and never creates one**.
+
+That single rule is what keeps a public OAuth button from becoming a public
+signup form, and it is why every login failure returns one indistinguishable
+response.
 
 ## Shared vocabulary
 
