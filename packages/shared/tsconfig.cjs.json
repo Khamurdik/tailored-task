@@ -1,8 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "module": "commonjs",
-    "moduleResolution": "node10",
+    // `module: node16` rather than `commonjs` + `moduleResolution: node10`.
+    // The old pair errors outright on TypeScript 6 (TS5107, deprecated) and is
+    // removed in 7, so it would have had to change twice. This emits CJS all
+    // the same — the format is decided by the nearest package.json to the
+    // source, and packages/shared has no "type" field — and it resolves `zod`
+    // through its exports map instead of guessing at "main".
+    "module": "node16",
+    "moduleResolution": "node16",
     "rootDir": "./src",
     "outDir": "./dist/cjs",
     "declaration": false,

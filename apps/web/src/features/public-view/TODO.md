@@ -13,7 +13,17 @@ The `/s/:token` route.
 `shared`, `explorer` (as a composed component), `viewer`.
 
 ## Responsibilities
-- [ ] Resolve the token via `/shares/resolve` → root node of the share
+- [ ] Read the credential out of the route (`/s/:code`) and send it as
+      `X-Share-Token` — **never as a query parameter and never in a path the API
+      sees**, so it cannot land in a server access log
+- [ ] Resolve it via `GET /shares/resolve` → `{ rootNodeId, role, expiresAt }`,
+      then fetch `GET /nodes/:rootNodeId` with the same header for the name and
+      the children. Two requests, deliberately: the API declines to inline a
+      node summary into the resolve response so that every fact a visitor learns
+      about the tree has passed through `NodeAccessGuard`. See
+      [`links/TODO.md`](../../../../api/src/links/TODO.md)
+- [ ] The route accepts both credential spellings — a 43-char token and a
+      16-char short code are the same route and the same code path
 - [ ] Render `<Explorer readOnly />` scoped to that root
 - [ ] Breadcrumbs stop at the share root — never reveal ancestors above it
 - [ ] Minimal header: item name, "Shared with you", no account menu

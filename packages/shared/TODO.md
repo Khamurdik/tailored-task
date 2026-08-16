@@ -34,19 +34,27 @@ The wire format.
 `zod` only. No Nest, no React, no Prisma.
 
 ## Responsibilities
-- [ ] Node schemas: `NodeSummary`, `NodeDetail`, `Breadcrumb`, `ChildrenPage`
-- [ ] Upload schemas: `InitUploadRequest/Response`, `CompleteUploadRequest`
-- [ ] Share schemas: `CreateShareRequest`, `ShareSummary`
-- [ ] Job schemas: `JobSummary` (definition + `lastRun` + `nextRunAt`),
+- [x] Node schemas: `NodeSummary`, `NodeDetail`, `Breadcrumb`, `ChildrenPage`
+- [x] Upload schemas: `InitUploadRequest/Response`, `CompleteUploadRequest`
+- [x] Share schemas: `CreateShareRequest` (carries `shortLink?: boolean`,
+      default false), `ShareSummary`, `CreatedShare` — the create response, the
+      only place a plaintext credential appears, carrying `token` and an
+      optional `shortCode`
+- [x] Share resolution: `ResolveShareResponse`
+      `{ rootNodeId, role, expiresAt: string | null }`. Deliberately does not
+      embed a node summary — see [`links/TODO.md`](../../apps/api/src/links/TODO.md).
+      There is no `ResolveShareRequest`: the credential travels in the
+      `X-Share-Token` header, never in a body or a query string
+- [x] Job schemas: `JobSummary` (definition + `lastRun` + `nextRunAt`),
       `JobRunSummary`, `JobRunDetail`, `TriggerJobResponse` `{ runId }`, and the
       `JobStatus` union (`running | succeeded | failed | timed_out | skipped |
       interrupted`). `nextRunAt` is an ISO string on the wire — never a Luxon
       `DateTime`, which is what `cron@4` hands the API internally
-- [ ] Auth schemas: `LoginRequest` `{ email, password }`,
+- [x] Auth schemas: `LoginRequest` `{ email, password }`,
       `GoogleLoginRequest` `{ idToken }`, `RefreshRequest` `{ refreshToken }`,
       `TokenPair` `{ accessToken, refreshToken }`, `SessionUser`.
       **No register schema** — there is no registration endpoint
-- [ ] Error codes:
+- [x] Error codes:
       ```ts
       'NAME_CONFLICT' | 'GONE' | 'CYCLIC_MOVE' | 'DEPTH_LIMIT'
       | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE_TYPE' | 'NOT_FOUND'

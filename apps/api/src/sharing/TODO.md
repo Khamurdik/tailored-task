@@ -8,11 +8,18 @@ access, revoke. Wraps `access`'s repository with policy and HTTP.
 Nothing. All state belongs to `access`.
 
 ## Public surface
-- `SharingController`: create, list, revoke
+- `SharingController`: create, list, revoke — **every route owner-authenticated,
+  with no exceptions.** The anonymous side of sharing is
+  [`links`](../links/TODO.md), which is a separate module precisely so that
+  sentence can be asserted rather than assumed
 - `SharingService.revokeSubtree(nodeIds)` — called on cascade delete
 
 ## Depends on
 `common`, `access`, `users`, `nodes` (read only, to display names).
+
+Minting is **not** done here. `access` issues the credentials along with the
+grant row (`ShareCodec`), so this module never touches randomness and cannot
+drift from the format [`links`](../links/TODO.md) has to parse.
 
 Does **not** depend on `auth`. The login-time claim is driven by an event
 `auth` emits (`user.authenticated`), not by `auth` calling into this module —

@@ -86,7 +86,7 @@ tell whether a case is missing.
 
 ### `P0` is deliberately rare
 
-**66 of 511.** An earlier revision had 332, which is not a prioritisation — if
+**76 of 534.** An earlier revision had 332, which is not a prioritisation — if
 two thirds of the suite blocks a module, nothing does. A row earns `P0` only if
 its failure is one of:
 
@@ -99,9 +99,13 @@ Everything else is `P1`, which still means *write it*. The point of the split is
 that `green / P0` answers "can this ship" and `green / declared` answers "how
 far along is it". Two different questions, and one number cannot serve both.
 
-The distribution that falls out is the intended one: `access` 7, `auth` 9,
-`nodes` 8, `sharing` 6, `public-view` 6 — and `explorer`, the largest suite in
-the repo at 80 rows, has exactly 1.
+The distribution that falls out is the intended one: `links` 10, `auth` 9,
+`nodes` 8, `access` 7, `sharing` 6, `public-view` 6 — and `explorer`, the
+largest suite in the repo at 80 rows, has exactly 1.
+
+`links` topping that list is not a new suite written over-enthusiastically. It
+is the only module whose entire input arrives from someone who was never
+authenticated, and nearly everything it can get wrong is a leak.
 
 ### Format rules the parser depends on
 - [ ] Tables live under a `## Declared tests` heading
@@ -149,27 +153,33 @@ another class this repo owns.
 A TDD harness that reports "0 tests, all passing" on day one is lying — it has
 no idea how much is missing. So the registry drives the report:
 
-- [ ] `src/registry/` parses every `## Declared tests` table into a registry.
+- [x] `src/registry/` parses every `## Declared tests` table into a registry.
       Only `###` groups **under a `## Declared tests` heading** are read, so a
       `## Personas` table like the one in `suites/journeys` is not a declaration
-- [ ] A **coverage gate** suite compares declarations against implementations
+- [x] A **coverage gate** suite compares declarations against implementations
       and emits one failing test per declared ID with no implementation, titled
       with that ID
-- [ ] The gate runs as its own Vitest project, `gate`, because it lives in
+- [x] The gate runs as its own Vitest project, `gate`, because it lives in
       `src/` and every other project includes only `suites/**`. Without a
       project of its own it is never collected, and run #1 is green by accident
       — which is the exact failure this section exists to prevent
-- [ ] **Implementations are discovered by scanning spec files, not run output.**
+- [x] **Implementations are discovered by scanning spec files, not run output.**
       The gate greps test titles across all of `suites/**` — the four Vitest
       projects *and* the Playwright journeys. Reading Vitest results instead
       would leave all 39 `JOURNEY-*` declarations permanently unimplemented,
       since Vitest never collects them
-- [ ] Rows marked `RETIRED` keep their number but leave the `declared` count.
+- [x] The scanner strips comments first and matches string literals **one line
+      at a time**. Both rules are load-bearing: an id mentioned only in a
+      comment must not count as implemented, and pairing quotes across a whole
+      file lets a single apostrophe in prose swallow every id after it. That
+      second one shipped, cost four silently-unimplemented tests, and is now
+      pinned by `src/registry/scan.spec.ts`
+- [x] Rows marked `RETIRED` keep their number but leave the `declared` count.
       The row stays so the ID is never reused; the requirement is gone
-- [ ] Result: run #1 has ~0 green and **511 red** — one per live declaration.
+- [x] Result: run #1 has ~0 green and **534 red** — one per live declaration.
       Progress is `implemented / declared` and `green / declared`, both real
       numbers rather than a percentage of whatever tests happen to exist
-- [ ] An implementation whose ID is not declared also fails the gate. Tests do
+- [x] An implementation whose ID is not declared also fails the gate. Tests do
       not appear from nowhere
 - [ ] The gate is the only place `it.todo` is acceptable. Everywhere else, an
       unfinished test fails
@@ -203,7 +213,7 @@ runs/
   "durationMs": 48213,
   "git": { "sha": "a1b2c3d", "branch": "main", "dirty": false },
   "projects": ["contract", "api-unit", "api-integration", "web-unit"],
-  "declared": 511,
+  "declared": 534,
   "implemented": 37,
   "totals": { "passed": 31, "failed": 6, "skipped": 0 },
   "failedIds": ["API-NODES-011", "API-ACCESS-004"]
@@ -273,9 +283,15 @@ once its module exists to fail against.
    the whole approach is decorative
 2. `suites/contract/` — no dependencies, catches schema drift immediately
 3. `suites/api/common`, then `nodes` — the property test is the highest-value
-   test in the repo and is specified to be written *before* folder CRUD exists
+   test in the repo and is specified to be written *before* folder CRUD exists.
+   State it against `parent_id`, not against a `path` column: the module
+   publishes an ancestor list and keeps its storage private, so the test
+   recomputes the truth rather than reading back the same derived value
 4. `suites/api/access` — the permission matrix, pure and fast
-5. `suites/api/auth`, `sharing`, `files`
+5. `suites/api/auth`, `sharing`, `links`, `files`. `links` can follow `access`
+   immediately, since its whole surface is one route over `SharesRepository` —
+   and its indistinguishability group is worth green before anything is
+   deployed anywhere reachable
 6. `src/reporters/` and `src/history/` — once there is enough history to read
 7. `suites/web/*`
 8. `suites/journeys/` — last, and deliberately few

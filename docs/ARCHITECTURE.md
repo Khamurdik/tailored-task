@@ -2,9 +2,23 @@
 
 ## The shape of the system
 
-A Data Room is a tree. Rooms, folders, and files are rows in one `nodes` table
-discriminated by `type`, linked by `parent_id`, with a materialized `path`
-column carrying the ancestor id chain.
+A Data Room is a tree. Rooms, folders, and files are rows in one
+**self-referencing `nodes` table**, discriminated by `type` and linked by
+`parent_id`. `parent_id` is the source of truth for ancestry; everything else
+about the tree is derived from it.
+
+*How* ancestry is queried — a materialized `path` column, a recursive CTE, a
+closure table — is a decision **inside `nodes`**, and it is deliberately still
+open. See [`nodes/TODO.md`](../apps/api/src/nodes/TODO.md) §Storage. No module
+outside `nodes` names a column, and nothing above L1 is allowed to assume a
+strategy was chosen. What the rest of the system compiles against is the
+**ancestor chain as an ordered list of ids**, which every candidate strategy can
+produce.
+
+The materialized path is the strategy the module currently expects to pick, so
+the notes that price it — prefix `LIKE` under `text_pattern_ops`, fixed-width
+UUID segments, the depth cap — are kept below rather than discarded. They are
+consequences of a choice, not premises of the design.
 
 Everything else in the backend is one of three things: something that owns a
 piece of that tree's lifecycle, something that evaluates who may touch it, or
@@ -18,7 +32,7 @@ except where noted, and never from above.
 ```
 L4   jobs          audit
      ──────────────────────────────────────────
-L3   sharing       files        search
+L3   sharing       links        files        search
      ──────────────────────────────────────────
 L2   auth          access
      ──────────────────────────────────────────
@@ -37,7 +51,10 @@ L0   common
   about a node. Conflating them is how a public share route ends up with a
   different permission code path than the private one.
 - **L3** — use-cases that combine lower layers. `files` is `nodes` + `storage`.
-  `sharing` is `nodes` + `access`. Controllers mostly live here.
+  `sharing` is `nodes` + `access`. `links` is the anonymous half of `sharing`,
+  split out so that "every route in `sharing` requires an owner" is a property
+  a test can assert instead of a convention someone maintains. Controllers
+  mostly live here.
 - **L4** — reactive and scheduled work. Nothing depends on these; they depend
   on everything.
 
@@ -57,7 +74,7 @@ e2e suite.
 
 ## The one place we invert a dependency
 
-`access` needs to read node paths to walk the ancestor chain. `nodes`
+`access` needs a node's ancestor chain to resolve inherited grants. `nodes`
 controllers need the access guard. That is a genuine cycle.
 
 Resolution: `access` declares a narrow port and never imports `nodes`.
@@ -70,10 +87,17 @@ export interface NodeSnapshot {
   id: string;
   rootId: string;
   ownerId: string;
-  path: string;
+  /**
+   * Ancestors, root first, **excluding self**. This is the whole reason the
+   * port exists, and it is a list rather than a `path` string on purpose: the
+   * ancestor chain is a fact about the tree, whereas a delimited path is one
+   * way of storing it. `access` resolving grants must not depend on which way
+   * `nodes` chose — see §The shape of the system.
+   */
+  ancestorIds: readonly string[];
   deletedAt: Date | null;
   /**
-   * True if ANY ancestor on `path` is soft-deleted.
+   * True if ANY ancestor is soft-deleted.
    *
    * Without this the resolver cannot enforce its own rule. `access` must return
    * `none` when the target *or any ancestor* is deleted, but a snapshot that
@@ -166,26 +190,43 @@ state, and putting it in the query cache means uploads die on navigation.
 
 ## Non-negotiable invariants
 
-These hold system-wide. Each has a test somewhere.
+These hold system-wide. Each has a test somewhere. The numbering is stable and
+referenced by name from the module and suite files — extend it, never renumber.
 
-1. `path` always equals the concatenation of ancestor ids ending in self, and
-   `depth` equals segment count minus one. `parent_id` is the source of truth;
-   `path` is a rebuildable derived index.
-2. No node's `path` may be a prefix of its own new parent's path — that is a
-   move into your own descendant, and it silently detaches a subtree.
-3. `depth` is capped at 32. A btree entry maxes out near 2704 bytes and a UUID
-   path segment is 37 chars, so an uncapped tree fails at ~73 levels with a raw
-   Postgres index error.
+They fall into two kinds, and the difference decides who is allowed to know
+about them. **1–5, 7, 8 are semantics**: true of the product regardless of how
+the tree is stored, and safe for any module to rely on. **6 is a consequence**
+of the materialized-path strategy `nodes` expects to choose; it is real, it is
+load-bearing while that strategy stands, and it is `nodes`' private business. A
+module outside `nodes` that finds itself depending on 6 has reached through an
+abstraction.
+
+### Semantics
+
+1. Ancestry is exactly what `parent_id` says. Any derived representation — a
+   `path` column, a closure table, a cached chain — equals the walk from the
+   node to its root, and `depth` equals the number of ancestors. `parent_id` is
+   the source of truth; everything else is a rebuildable index.
+2. A node may not be moved beneath its own descendant. That silently detaches a
+   subtree, and it is the one move that looks legal from the parent's side.
+3. `depth` is capped at 32. Under a materialized path this is a hard storage
+   limit rather than a policy — a btree entry maxes out near 2704 bytes and a
+   UUID path segment is 37 chars, so an uncapped tree fails at ~73 levels with a
+   raw Postgres index error. The cap stays at 32 even if the storage strategy
+   changes: a 32-deep data room is already past what anyone navigates.
 4. A soft-deleted node has all descendants soft-deleted in the same
    transaction, and every grant under it revoked.
 5. Names are NFC-normalized before the uniqueness check. `café` in NFD and NFC
    are different byte strings that render identically.
+7. Effective permission is the maximum role across the node's own grants and
+   all its ancestors' grants.
+8. `size_bytes` comes from S3's `HeadObject`, never from the client.
+
+### Consequence of the storage strategy — `nodes` only
+
 6. Nothing user-controlled ever enters `path`. A `%` or `_` in a name would
    break every prefix query in the system. Prefix matching is also only
    unambiguous because **every id is a fixed-length UUID** — with variable-width
    ids, `LIKE '/a/b%'` would match `/a/bc` and every cascade would silently
    over-reach. Ids are UUIDs and stay UUIDs; changing that breaks soft-delete,
    move, and stats at once.
-7. Effective permission is the maximum role across the node's own grants and
-   all its ancestors' grants.
-8. `size_bytes` comes from S3's `HeadObject`, never from the client.

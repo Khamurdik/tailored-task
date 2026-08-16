@@ -27,6 +27,10 @@ declared in ascending order rather than alphabetically. `editor` is defined and
 - `resolveAccess(input): Role` — **pure function, zero dependencies**
 - `NodeAccessGuard`, `@RequireAccess('read' | 'write' | 'own')`
 - `SharesRepository` — grant reads and writes
+- `ShareCodec` — `mintToken()`, `mintShortCode()`, `hash(value)`, `findByCredential()`.
+  Lives here because `sharing` issues credentials and `links` reads them, and
+  both must import downward. The format is specified in
+  [`links/TODO.md`](../links/TODO.md)
 - `NODE_LOOKUP` port + `NodeSnapshot` type (see `docs/ARCHITECTURE.md`)
 
 ## Depends on
@@ -38,13 +42,22 @@ never imports `nodes`.
 
 ## Responsibilities
 - [ ] Schema: `id`, `node_id`, `kind` (`public_link` | `user`), `token_hash`,
-      `principal_user_id`, `principal_email`, `role`, `expires_at`,
-      `revoked_at`, `created_by`, `created_at`
+      `short_code_hash` (nullable, unique), `principal_user_id`,
+      `principal_email`, `role`, `expires_at`, `revoked_at`, `created_by`,
+      `created_at`
+- [ ] `short_code_hash` is the second spelling of the same grant, minted only
+      when a share is created with `shortLink: true`. It is a column rather than
+      a table for one reason: revocation must not have two places to reach. See
+      [`links/TODO.md`](../links/TODO.md). Lookups by either hash are indexed;
+      neither is ever scanned
 - [ ] The resolver, as a pure function:
       ```ts
       resolveAccess({ actor, node: NodeSnapshot, grants: Grant[] }): Role
       ```
-      Ancestor ids come from `node.path` — no recursion, no extra query.
+      Ancestor ids arrive on `node.ancestorIds`, already resolved by the
+      repository behind `NODE_LOOKUP` — no recursion and no extra query here.
+      This module never learns how `nodes` computes them, which is why a change
+      of storage strategy cannot reach the resolver.
 - [ ] `NodeSnapshot.ancestorsDeleted` is what makes the deleted-ancestor rule
       below computable. The old five-field snapshot carried only the node's own
       `deletedAt`, so a pure function had no way to see a deleted ancestor and

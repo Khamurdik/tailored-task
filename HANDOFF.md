@@ -30,15 +30,21 @@ Read in this order:
 
 ## 2. Current state
 
-**84 files, ~4,500 lines of markdown, and zero lines of application source.**
+**102 files, ~5,000 lines of markdown, and the first ~1,200 lines of source.**
+
+Phase 1 has landed: the wire contract and the coverage gate. Everything under
+`apps/` is still specification only.
 
 | Exists | Does not exist |
 | --- | --- |
-| Module specs (`*/TODO.md`) for all 18 modules | Any `.ts` under `apps/*/src` |
+| Module specs (`*/TODO.md`) for all 19 modules | Any `.ts` under `apps/*/src` |
 | pnpm workspace, 5 packages, all configs | `prisma/schema.prisma` models |
-| `pnpm-lock.yaml` — installed and resolved | Any test implementation |
-| 511 declared tests in 87 groups, 66 of them `P0` | Any migration |
-| Prisma datasource + generator block, `prisma validate` clean | |
+| `pnpm-lock.yaml` — installed and resolved | Any migration |
+| 534 declared tests in 91 groups, 76 of them `P0` | Any API or web source |
+| Prisma datasource + generator block, `prisma validate` clean | The test harness (`src/support/`) |
+| **`packages/shared` — the full contract, building to CJS + ESM** | The run-log reporter and `pnpm history` |
+| **`tests/src/registry` + the coverage gate — run #1 is red, 534 of them** | |
+| **`suites/contract` — 12 of 12 green** | |
 
 **The toolchain has now been installed and run** (2026-08-16, Node 26.7.0, pnpm
 11.22.0). That replaces the previous "verified only against the npm registry"
@@ -49,10 +55,10 @@ will resolve itself with the first `.ts` file.
 
 ### Layout
 ```
-apps/api/src/<module>/TODO.md     11 backend modules, L0–L4
+apps/api/src/<module>/TODO.md     12 backend modules, L0–L4
 apps/web/src/{shared,features/*}  7 frontend modules
 packages/shared/                  the zod wire contract
-tests/                            all 511 declarations, mirrors the module tree
+tests/                            all 534 declarations, mirrors the module tree
 docs/                             ARCHITECTURE, TOOLCHAIN
 ```
 
@@ -193,12 +199,63 @@ Explicitly out of scope, third priority behind `jobs` and `search`. The file
 remains as a design note. Nothing depends on it (it is a pure listener), which
 is what makes deferring it safe.
 
-### 3.10 Tests — moved out of the modules
+### 3.10 `nodes` — a contract now, a schema later
+- The open DDL decision was **not** made. It was **removed from the critical
+  path** instead, on the instruction that the tree should be expressed at a
+  higher level of abstraction and the database details can wait.
+- `nodes/TODO.md` now publishes a contract: a `Node` shape, and ancestry as
+  `ancestorIds: readonly string[]` plus an `ancestorsDeleted` flag. Every
+  subtree operation is a method on the module — `deleteSubtree`, `moveSubtree`,
+  `statsFor`, `listChildren` — and **no module outside `nodes` writes a prefix
+  predicate, a recursive CTE, or a join against a closure table.**
+- `NODE_LOOKUP` changed from `path: string` to `ancestorIds`. That was the only
+  place the storage strategy had escaped the module, and `access` was the only
+  consumer.
+- The physical schema is one **self-referencing table**; how ancestry is made
+  queryable is deferred to `nodes/TODO.md` §Storage, which lists the three
+  candidates and their costs. **The materialized path is still the expected
+  choice**, and the two notes that must land with it — `text_pattern_ops`/`C`
+  collation for prefix `LIKE`, and cursor collation matching `ORDER BY` — moved
+  there with it rather than being dropped.
+- `docs/ARCHITECTURE.md`'s invariants are now split into *semantics* (1–5, 7, 8)
+  and *a consequence of the storage strategy* (6, `nodes`-private). **Numbering
+  is unchanged** — module and suite files reference these by number.
+- The payoff to check this bought: the tree property test is writable **now**,
+  because it is stated against `parent_id` walked in the test rather than
+  against a `path` column read back from the code under test.
+
+### 3.11 `links` — the anonymous edge, split out of `sharing`
+- New L3 module. Owns `GET /shares/resolve`, the uniform failure, the throttle,
+  and the credential redaction. Owns **no table and no minting**.
+- Reason for a separate module, not a second controller in `sharing`: every
+  route in `sharing` is owner-authenticated and every route in `links` is
+  anonymous. Those are opposite defaults, and one file holding both is where a
+  missing guard hides. It also lets a suite assert "`sharing` has no anonymous
+  route" with no carve-out.
+- **Short URLs**: 16 Crockford base32 characters, 80 bits, stored as SHA-256 in
+  a new `shares.short_code_hash` column — a column and not a table, so
+  revocation has one place to reach. **Opt-in per share** (`shortLink: true`),
+  because a grant is only as strong as its weakest credential and minting a code
+  takes that share from 256 bits to 80. Floor is 64 bits.
+- No checksum character in the code: it would let an attacker filter guesses
+  offline before spending a request against the throttle.
+- The resolve response is `{ rootNodeId, role, expiresAt }` and deliberately
+  carries **no node summary**, so every fact a visitor learns about the tree has
+  passed through `NodeAccessGuard`. `public-view` makes a second request.
+- **One correction worth not repeating**: the first draft had `sharing`
+  importing `links` for minting — a same-layer L3 import. Fixed by moving
+  `ShareCodec` down into `access`, beside the two hash columns it fills. Both
+  modules now import downward and neither imports the other.
+- Declarations grew by 23 to **534**, `P0` by 10 to **76**. `links` now has the
+  largest `P0` group in the repo, which is correct: it is the only module whose
+  entire input comes from someone who was never authenticated.
+
+### 3.12 Tests — moved out of the modules
 - All tests live in [`tests/`](tests/TODO.md). `apps/api` and `apps/web` carry no
   runner and no test dependency.
 - Module `TODO.md` **Tests** sections remain as *requirements*, each pointing at
   its mirrored suite.
-- **511 declarations in 87 groups**, declared in markdown tables that are both
+- **534 declarations in 91 groups**, declared in markdown tables that are both
   the human doc and the machine registry.
 - Driven by, in priority order: security checks → user stories → invariants →
   contracts. Explicitly not by internal structure.
@@ -256,6 +313,47 @@ have:
 - Tailwind v4 has no config file; theme lives in `apps/web/src/index.css`.
   `tailwindcss-animate` → `tw-animate-css`; `tailwind-merge` must be v3.
 
+### Found by writing the first source file (2026-08-16)
+
+The install proved the dependency graph. Writing actual code proved three more
+things that neither the registry nor the install could have:
+
+- **`packages/shared`'s CJS build had never run.** `moduleResolution: node10` is
+  a hard `TS5107` error on TypeScript 6 and is removed in 7. Now
+  `module: node16` + `moduleResolution: node16`, which still emits CommonJS —
+  the format follows the nearest `package.json`, and this one has no `type`
+  field — and resolves `zod` through its exports map instead of guessing at
+  `main`. `apps/api/tsconfig.json` hit the same error and was fixed the other
+  way, with `"ignoreDeprecations": "6.0"`, because `node10` there is load-bearing:
+  it is what makes every import in `src/` extensionless, which is the whole
+  premise of the strip-safe zone.
+- **The ESM build emitted specifiers Node cannot resolve.** `moduleResolution:
+  bundler` permits extensionless relative imports and copies them verbatim into
+  `dist/esm`, which is marked `"type": "module"` — so `import './constants'`
+  is `ERR_MODULE_NOT_FOUND` under real Node ESM. It would have worked forever in
+  `apps/web` (Vite resolves it) and failed the moment anything imported the
+  package outside a bundler. Fixed by writing explicit `.js` extensions in the
+  sources; both builds accept them.
+- **Vitest 4 removed the `basic` reporter.** `--reporter=basic` is a hard error,
+  not a warning. Use `dot` or the default.
+
+- **The coverage gate's scanner under-reported, silently.** It paired quote
+  characters across a whole file to find test titles, so one apostrophe in a
+  prose comment — `the block's contents` — opened a "string" that ran to the
+  next quote further down and swallowed every id in between. Four passing tests
+  reverted to `unimplemented` and it looked exactly like ordinary red, which is
+  the worst failure a coverage gate can have. Fixed by stripping comments and
+  matching literals one line at a time, and `src/registry/scan.spec.ts` now
+  pins the behaviour — including that an id mentioned only in a comment does
+  **not** count as implemented.
+
+Two smaller ones: `zod` had to be added to `@dataroom/tests` (the contract suite
+imports it directly to check that schemas are strict, and it was only ever a
+transitive dependency), and `tests/tsconfig.json` gained
+`allowImportingTsExtensions` so `node src/registry/cli.ts` resolves its own
+relative imports under type stripping — the same constraint `prisma/seed.ts`
+lives under, arrived at from the other direction.
+
 ---
 
 ## 5. Still open — decide before or during implementation
@@ -263,17 +361,11 @@ have:
 Everything in the previous revision of this list except item 1 has been settled;
 see §3.7–§3.9 and the resolutions noted inline in the module specs.
 
-1. **The `nodes` schema does not exist.** `nodes/TODO.md` says "schema per
-   `docs/ARCHITECTURE.md`, plus all five indexes"; that document has no DDL and
-   no index list. **This is the one genuinely open decision left**, and it is
-   deliberately not blocking: `common`, `storage`, `packages/shared`, the test
-   harness, and the registry/coverage gate can all be built first. Settle it
-   before `nodes` itself.
-
-   Two things have to land with it:
-   - prefix `LIKE` only uses an index under `text_pattern_ops` or `C` collation,
-     and every cascade in the system is a prefix query;
-   - the cursor's collation must match the `ORDER BY` collation exactly.
+1. ~~**The `nodes` schema does not exist.**~~ **No longer open, and no longer
+   blocking anything.** See §3.10: the module publishes a contract and keeps the
+   schema as its own deferred decision, with the strategy comparison and the two
+   collation notes in `nodes/TODO.md` §Storage. Pick the strategy when `nodes`
+   is built, and write the DDL and the index list in that same change.
 
 2. **Does the event bus earn its keep?** `common` now owns it (see
    `common/TODO.md`), which resolves the ownership question — but `user.created`
@@ -283,10 +375,11 @@ see §3.7–§3.9 and the resolutions noted inline in the module specs.
    `sharing` is written, not before.
 
 3. **`pnpm -r typecheck` fails with `TS18003: No inputs were found`** in
-   `packages/shared`, `apps/api`, and `apps/web`, because they contain no source.
-   Correct behaviour, but it means the command is red today and a real error
-   would not stand out. Resolves itself with the first `.ts` file; until then, do
-   not read a red typecheck as a problem.
+   `apps/api` and `apps/web`, because they contain no source. `packages/shared`
+   and `tests` now typecheck clean, which is the first half of this resolving
+   itself. Two `TS5107` deprecation errors were hiding behind the noise and have
+   been fixed — see §4. Until the first `.ts` lands under `apps/`, a red
+   `-r typecheck` with *only* `TS18003` in it is the expected state.
 
 ### Deferred deliberately — revisit, do not rediscover
 
@@ -305,8 +398,8 @@ see §3.7–§3.9 and the resolutions noted inline in the module specs.
   with no confirmation from an authenticated session. Out of scope for the
   assignment; a real deployment needs the confirmation step.
 - **Test distribution still leans to the web.** `access` has 14 declarations and
-  `web/explorer` has 80; web features hold 277 of 511. The `P0` set was rebuilt
-  to correct for it (66 rows, weighted to the API security core — see
+  `web/explorer` has 80; web features hold 277 of 534. The `P0` set was rebuilt
+  to correct for it (76 rows, weighted to the API security core — see
   `tests/TODO.md` §2), but the raw declaration counts were left alone. They are
   not wrong, just unevenly deep.
 

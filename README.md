@@ -39,10 +39,11 @@ record the README deliverable asks for.
 | L0 | [`common`](apps/api/src/common/TODO.md) | Config, Prisma client, error envelope, pagination, string handling. No domain logic. |
 | L1 | [`storage`](apps/api/src/storage/TODO.md) | Blob storage adapter. Presigned URLs, head, delete. Knows nothing about the tree. |
 | L1 | [`users`](apps/api/src/users/TODO.md) | User records and lookup. Provisioned from `.env` by the seeder — no signup. |
-| L1 | [`nodes`](apps/api/src/nodes/TODO.md) | The tree. Rooms, folders, files as one table. Paths, naming, moves, stats. |
+| L1 | [`nodes`](apps/api/src/nodes/TODO.md) | The tree. Rooms, folders, files as one self-referencing table. Ancestry, naming, moves, stats. |
 | L2 | [`auth`](apps/api/src/auth/TODO.md) | Password + Google login, bearer tokens, session guards. Identity only — never authorization. |
 | L2 | [`access`](apps/api/src/access/TODO.md) | Grants storage + permission resolution + route guards. |
-| L3 | [`sharing`](apps/api/src/sharing/TODO.md) | Share use-cases: issue links, invite users, revoke, cascade. |
+| L3 | [`sharing`](apps/api/src/sharing/TODO.md) | Share use-cases: issue links, invite users, revoke, cascade. Owner-only, every route. |
+| L3 | [`links`](apps/api/src/links/TODO.md) | The anonymous edge: resolve a share token or a 16-char short code to a grant. One uniform failure. |
 | L3 | [`files`](apps/api/src/files/TODO.md) | Upload lifecycle orchestration. Binds `nodes` to `storage`. |
 | L3 | [`search`](apps/api/src/search/TODO.md) | Name search scoped to a room. **Deferred — do not implement.** |
 | L4 | [`audit`](apps/api/src/audit/TODO.md) | Append-only event log. **Deferred — do not implement.** |
@@ -58,7 +59,7 @@ record the README deliverable asks for.
 | [`features/uploads`](apps/web/src/features/uploads/TODO.md) | Transfer queue, dropzone, progress panel. Client-side state, not server state. |
 | [`features/viewer`](apps/web/src/features/viewer/TODO.md) | PDF preview. |
 | [`features/sharing`](apps/web/src/features/sharing/TODO.md) | Share dialog and grant management. |
-| [`features/public-view`](apps/web/src/features/public-view/TODO.md) | Read-only shell for `/s/:token`. Reuses explorer components. |
+| [`features/public-view`](apps/web/src/features/public-view/TODO.md) | Read-only shell for `/s/:code`. Reuses explorer components. |
 
 ### Shared
 
@@ -73,7 +74,7 @@ record the README deliverable asks for.
 | [`tests`](tests/TODO.md) | Every test in the system, declared before it is written. Mirrors the module tree. |
 
 No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
-test *requirements*; [`tests/`](tests/TODO.md) turns those into 511 addressable,
+test *requirements*; [`tests/`](tests/TODO.md) turns those into 534 addressable,
 traceable declarations, grouped by what the user is trying to do, and is where
 they are implemented. The first run is meant to be red — see
 [`tests/TODO.md`](tests/TODO.md) §4.
@@ -81,21 +82,40 @@ they are implemented. The first run is meant to be red — see
 ## Suggested order
 
 ```
-common → storage → users → nodes → auth → access → sharing → files
+packages/shared → tests/registry + gate → tests/contract
+       → common → storage → users → nodes → auth → access
+       → sharing → links → files
        → web/shared → web/auth → web/explorer → web/uploads
-       → web/sharing → web/public-view → web/viewer
+       → web/sharing → web/viewer → web/public-view
        → jobs
 ```
+
+Four things about this order are load-bearing and were got wrong in an earlier
+revision of it:
+
+- **The contract and the coverage gate come first.** `common` re-exports
+  constants `packages/shared` owns, and a gate written after the suites exist
+  cannot make run #1 red — which is the whole point of it (`tests/TODO.md` §4).
+- **`auth/password.ts` lands with `users`, not with `auth`.** The seeder imports
+  it, and the seeder is part of `users`. It is a leaf file in the strip-safe
+  zone, not the `auth` module arriving early.
+- **`web/viewer` comes before `web/public-view`**, which depends on it. The
+  reverse order means building the viewer twice.
+- **`storage` is a parallel lane, not a step.** It touches neither the tree nor
+  the database, so it only has to exist before `files`.
 
 Two modules are **deferred and out of scope**: [`search`](apps/api/src/search/TODO.md)
 (permission-filtered pagination is the hard part, and it is not worth the risk
 here) and [`audit`](apps/api/src/audit/TODO.md). Both stay in the repo as design
 notes. Neither has a dependent, which is what makes deferring them free.
 
-The [`nodes`](apps/api/src/nodes/TODO.md) table schema is still an open decision
-and is deliberately not blocking: `common`, `storage`, `packages/shared`, the
-test harness, and the registry/coverage gate can all be built against it being
-unwritten. Settle it before `nodes` itself.
+The [`nodes`](apps/api/src/nodes/TODO.md) **physical schema** is still an open
+decision, and it is no longer on the critical path. That module now publishes a
+contract — a `Node` shape and an ancestor chain as a list of ids — that every
+module above L1 compiles against, so the choice between a materialized path, a
+recursive CTE, and a closure table stays inside the repository and can be made
+when `nodes` is built. See [`nodes/TODO.md`](apps/api/src/nodes/TODO.md)
+§Storage.
 
 ## Authentication at a glance
 
@@ -124,6 +144,11 @@ unwritten. Settle it before `nodes` itself.
   a real deployment should require the link to be confirmed while signed in.
 - **A presigned GET cannot be revoked once issued.** The 60-second TTL is the
   entire mitigation. Revoking a share does not kill a URL already handed out.
+- **A short share link is weaker than the token it aliases** — 80 bits against
+  256 — and a grant is only as strong as its weakest credential. That is why
+  short codes are opt-in per share rather than the default, and why 64 bits is
+  the floor below which they will not go. See
+  [`links/TODO.md`](apps/api/src/links/TODO.md).
 - **The scheduler runs on exactly one instance** — see
   [`jobs/TODO.md`](apps/api/src/jobs/TODO.md) §5. Do not scale the API service
   past one instance without reading it first.

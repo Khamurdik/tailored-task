@@ -8,6 +8,12 @@
     "jsx": "react-jsx",
     "noEmit": true,
 
+    // Relative imports inside `src/` carry explicit `.ts` extensions so that
+    // `node src/registry/cli.ts` and `node src/history/cli.ts` resolve under
+    // Node's type stripping, which has no compiler and no extension guessing.
+    // Legal here only because this project emits nothing.
+    "allowImportingTsExtensions": true,
+
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": false,

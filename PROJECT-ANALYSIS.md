@@ -45,43 +45,63 @@ design-record deliverable.
 
 ## 2. The one idea the whole system rests on
 
-Rooms, folders, and files are **one `nodes` table** discriminated by `type`,
-linked by `parent_id`, carrying a materialized `path` of ancestor ids.
+Rooms, folders, and files are **one self-referencing `nodes` table**,
+discriminated by `type` and linked by `parent_id`. Almost every non-obvious
+decision downstream is a consequence of that single choice:
 
-Almost every non-obvious decision downstream is a consequence of that choice:
+- **Ancestor grants resolve with no recursion.** `access` receives a node's
+  ancestor ids and fetches every relevant grant in one query. That is what lets
+  the permission resolver be a *pure function*.
+- **Cascade operations are subtree operations**, expressed once as methods on
+  `nodes` — soft-delete, stats, share scoping — rather than as a query each
+  caller writes.
+- **The cost is invariant maintenance.** Derived ancestry has to be kept honest,
+  which is what most of the system-wide invariants are for, and `rebuildSubtree`
+  is the escape hatch when it isn't. `parent_id` is declared the source of
+  truth; everything else is a rebuildable index.
 
-- **Ancestor grants resolve with no recursion.** `access` parses ancestor ids
-  out of `path` and fetches every relevant grant in a single query. That is what
-  lets the permission resolver be a *pure function*.
-- **Cascade operations are prefix operations.** Soft-delete, subtree stats,
-  audit scoping, and search scoping are all `path LIKE $prefix || '%'`.
-- **Move is one `UPDATE`.** `replace(path, $old, $new)` over the prefix, plus a
-  depth delta.
-- **The cost is invariant maintenance.** `path` is derived state, so six of the
-  eight system-wide invariants exist purely to keep it honest — and
-  `rebuildSubtree` exists as the escape hatch when it isn't.
+**A later revision separated the idea from its implementation, and that is the
+more interesting version of this section.** The materialized `path` of ancestor
+ids — with its prefix `LIKE`, its `replace()` move, and its fixed-width-UUID
+requirement — used to *be* the idea, named in the architecture document and
+reachable through the `NODE_LOOKUP` port as a bare `path: string`. It is now one
+candidate strategy behind a contract that speaks in ancestor *lists*, and it is
+still the expected pick.
 
-The design knows this and prices it correctly: `parent_id` is declared the
-source of truth, `path` a rebuildable index.
+Two things fall out of that, both good. The physical schema stops blocking
+anything above L1, so the missing DDL — previously the largest hole in the tree
+— is a decision the module makes when it is built rather than a decision the
+whole project waits on. And invariant 6, the one that says nothing
+user-controlled may enter `path`, is now visibly a property of a *choice* rather
+than a law of the domain, which is exactly what it always was.
 
 ---
 
 ## 3. Structure
 
-### Backend — five layers, 11 modules (9 in scope; `search` and `audit` are deferred)
+### Backend — five layers, 12 modules (10 in scope; `search` and `audit` are deferred)
 
 ```
-L4   jobs          audit                 reactive / scheduled
-L3   sharing       files      search     use-cases, controllers
-L2   auth          access                identity  /  authorization
-L1   users         nodes      storage    domain primitives, adapters
-L0   common                              infrastructure, zero domain
+L4   jobs          audit                             reactive / scheduled
+L3   sharing       links      files      search      use-cases, controllers
+L2   auth          access                            identity  /  authorization
+L1   users         nodes      storage                domain primitives, adapters
+L0   common                                          infrastructure, zero domain
 ```
 
 I checked every module's declared dependencies against this graph. **They are
 consistent** — no module imports upward, and no same-layer import is declared.
 That is not a given in a spec written module-by-module, and it is the strongest
 signal that the layering was derived rather than decorated.
+
+`links` is the newest and splits the anonymous share-resolution route out of
+`sharing`, on the same reasoning that split `access` from `sharing`: every route
+in `sharing` requires an owner, every route in `links` requires nobody, and a
+controller holding both is where a missing guard hides. It cost one round of
+correction to get right — the first draft had `sharing` importing `links` for
+credential minting, which is a same-layer import, resolved by moving the codec
+down into `access` beside the columns it fills. Worth recording because it is
+evidence for the paragraph above rather than against it: the rule caught it.
 
 ### Frontend — one shared core, six features
 
@@ -200,19 +220,28 @@ would cost to discover during implementation instead of now.
 
 | # | Issue | Where |
 | --- | --- | --- |
-| 1 | **Who listens to `node.deleted`?** `nodes` says the event is emitted "so `access` can revoke grants". `sharing` says it owns the listener (`SharingService.revokeSubtree`), and the README agrees. Two modules are specified as the subscriber; only one can be. **Still open.** | [nodes:40](apps/api/src/nodes/TODO.md#L40) vs [sharing:30](apps/api/src/sharing/TODO.md#L30) |
-| 2 | **`common` cannot depend on nothing.** Its stated dependencies are "Nothing" and "Must not depend on: Anything", yet it must import `zod` (config schema) and the `ErrorCode` union from `packages/shared`. The intent is clearly *no domain modules*; as written it is false. | [common:20-24](apps/api/src/common/TODO.md#L20-L24) |
+| 1 | ~~**Who listens to `node.deleted`?**~~ **Resolved.** `nodes` now names `sharing` as the listener in the responsibility itself, with the reason attached: `access` is storage and resolution, and the use-case that revokes grants sits above it. `nodes` only emits. | [nodes](apps/api/src/nodes/TODO.md) · [sharing](apps/api/src/sharing/TODO.md) |
+| 2 | ~~**`common` cannot depend on nothing.**~~ **Resolved.** It now declares `zod` plus `packages/shared`, and forbids *domain* modules rather than everything. The old wording is kept as a note in the file so the change reads as a correction rather than a drift. | [common](apps/api/src/common/TODO.md) |
 | 3 | ~~**`audit` needs `access`.**~~ **Resolved by deferral.** `audit` is now explicitly out of scope, and the contradiction is recorded in the file for whoever picks it up. | [audit](apps/api/src/audit/TODO.md) |
-| 4 | **Feature folders and `public-view`.** The architecture says feature folders never import each other and compose at the route level; `public-view` lists `explorer` and `viewer` as dependencies. Defensible, since `public-view` *is* a route — but the rule and the dependency list contradict each other textually. | [ARCHITECTURE:128](docs/ARCHITECTURE.md#L128) vs [public-view:13](apps/web/src/features/public-view/TODO.md#L13) |
-| 5 | **`ARCHITECTURE.md` is duplicated verbatim** at the repo root and in `docs/`. Byte-identical today; guaranteed to diverge. Every cross-reference points at the `docs/` copy, so the root copy is the one to delete. | root vs `docs/` |
+| 4 | **Feature folders and `public-view`.** Textual only, and it survives: the architecture says features compose at the route level, and `public-view` *is* the route — it is the composition, not a peer reaching sideways. Worth one clarifying clause in the architecture rule; not worth restructuring anything. **Open, cosmetic.** | [ARCHITECTURE](docs/ARCHITECTURE.md) vs [public-view](apps/web/src/features/public-view/TODO.md) |
+| 5 | ~~**`ARCHITECTURE.md` is duplicated verbatim**~~ **Resolved.** The root copy is gone; `docs/ARCHITECTURE.md` is the only one, which is where every cross-reference already pointed. | `docs/` |
 
 ### 6.2 Missing specification
 
-- **The `nodes` schema does not exist.** `nodes` says "Schema per
-  `docs/ARCHITECTURE.md`, plus all five indexes" — and the architecture document
-  contains no DDL and no index list. The single most important table in the
-  system, and its shape and every index are unspecified. This is the largest
-  hole in the tree.
+- ~~**The `nodes` schema does not exist.**~~ **Resolved by raising the
+  abstraction rather than by writing DDL.** The finding was right that the
+  schema was missing and wrong that it was blocking. `nodes` now publishes a
+  contract — a `Node` shape, and ancestry as an ordered list of ids — that
+  everything above L1 compiles against, and keeps the physical schema as its own
+  deferred decision (`nodes/TODO.md` §Storage). The `NODE_LOOKUP` port moved
+  from `path: string` to `ancestorIds: readonly string[]` in the same change,
+  which was the one place the storage strategy had leaked out of the module.
+
+  This is the better resolution and it is worth being explicit about why. DDL
+  written now would have been written by whoever was least equipped to choose —
+  before there was a query to profile — and it would have arrived pre-committed
+  to prefix `LIKE` everywhere above it. What was actually blocking was not the
+  absence of a table; it was the absence of a stated interface to it.
 - **No event bus owner.** Four events are now specified (`user.created`,
   `user.authenticated`, `node.deleted`, and the node lifecycle events that
   `audit` would have consumed) and the decoupling story depends on them, but no
@@ -238,11 +267,15 @@ would cost to discover during implementation instead of now.
   `application/pdf` — sits deliberately *outside* the toggle, because otherwise
   flipping one config value opens a stored-XSS path on the bucket origin that
   the app's CSP cannot cover. See `files/TODO.md`.
-- **No workspace tooling.** `apps/*` + `packages/shared` implies a pnpm/turbo
-  monorepo; nothing configures one. Path aliases, the shared package's build, and
-  the layering rules themselves (which are exactly what an ESLint boundaries rule
-  or `dependency-cruiser` config could *enforce* rather than merely document) are
-  all unaddressed.
+- ~~**No workspace tooling.**~~ **Mostly resolved.** There is a pnpm workspace
+  with five packages, pinned versions, tsconfigs, path aliases, and a working
+  dual-format build for `packages/shared` — all installed and run, not just
+  declared (`HANDOFF.md` §4). What is *not* resolved is the interesting half:
+  the L0–L4 graph is still prose discipline in 19 files, when an ESLint
+  boundaries rule or a `dependency-cruiser` config could make an upward import
+  fail the build. The graph is small, stable, and written down — three
+  properties that make it unusually cheap to encode. Still the highest-value
+  unbuilt piece of tooling here.
 
 ### 6.3 Risks in the design itself
 
@@ -288,15 +321,24 @@ and three cross-module contradictions survive because no single document
 reconciles the parts. The layering rules are stated as prose discipline in a
 place where they could be mechanically enforced.
 
-**If I were starting implementation**, the order would be: write the `nodes`
-DDL + indexes into `docs/ARCHITECTURE.md` and delete the duplicate at the root;
-resolve the four contradictions in §6.1 with one line each; give the event bus an
-owner and a payload contract in `common`; pin the remaining constants and the
-PDF-only decision; stand up the workspace with a boundaries lint rule encoding
-the L0–L4 graph. That is perhaps a day's work, and it removes every decision
-that would otherwise be made ad hoc, mid-implementation, by whoever hits it
-first.
+**Everything on that list has since been done except one item.** The
+contradictions are resolved, the event bus has an owner and a payload contract
+in `common`, the constants and the PDF-only decision are pinned, the duplicate
+architecture document is gone, and the workspace stands up and installs clean.
+The `nodes` schema was resolved differently than proposed — by publishing a
+contract and deferring the DDL, which is the better answer and is argued for in
+§6.2.
 
-Then follow the suggested order as written — `common → storage → users → nodes`
-— and write the tree property test before folder CRUD exists, exactly as
-[nodes](apps/api/src/nodes/TODO.md#L57) instructs.
+**What is left from that list is the boundaries lint rule.** The L0–L4 graph is
+the most-repeated claim in this repository and the only one nothing checks. It
+would have caught, mechanically, the same-layer import that appeared and was
+removed while `links` was being specified.
+
+**The build order** now starts before `common`: `packages/shared` and the
+registry/coverage gate come first, because `common` re-exports constants the
+shared package owns and a gate written later cannot make run #1 red. Then
+`common → storage → users → nodes → auth → access → sharing → links → files`,
+web, and `jobs` last. Write the tree property test before folder CRUD exists,
+exactly as [nodes](apps/api/src/nodes/TODO.md) instructs — and state it against
+`parent_id` rather than against a derived path, which is what makes it writable
+while the schema is still open.

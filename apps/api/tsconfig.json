@@ -3,6 +3,16 @@
   "compilerOptions": {
     "module": "commonjs",
     "moduleResolution": "node10",
+
+    // TypeScript 6 errors on `node10` (TS5107) unless the deprecation is
+    // acknowledged; 7 removes it outright. Keeping node10 is deliberate — it
+    // is what makes every import in `src/` extensionless, which is the
+    // constraint the strip-safe zone in users/TODO.md is built around — so the
+    // acknowledgement is the right fix and the migration is a TS 7 problem.
+    // Without this line the typecheck is red for a reason that has nothing to
+    // do with the code, which is exactly the noise HANDOFF §5.3 warns about.
+    "ignoreDeprecations": "6.0",
+
     "target": "ES2023",
     "lib": ["ES2023"],
     "outDir": "./dist",
