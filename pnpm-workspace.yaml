@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "tests"
 
 # pnpm 10+ blocks dependency lifecycle scripts by default. Anything that needs
 # a postinstall to fetch a native binary or generate code MUST be listed here,

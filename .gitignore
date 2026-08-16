@@ -68,6 +68,13 @@ playwright-report/
 playwright/.cache/
 blob-report/
 
+# Run log: the history index is tracked on purpose — it is the record of how the
+# suite has moved over time, and it is useless if every checkout starts empty.
+# The bulky per-run payloads are not.
+tests/runs/*
+!tests/runs/.gitkeep
+!tests/runs/index.jsonl
+
 # ---------- logs ----------
 logs/
 *.log

@@ -101,6 +101,9 @@ This is why `sharing` also binds pending grants at login time — see
 - No HTTP request in the system creates a user row.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/users/TODO.md`](../../../../tests/suites/api/users/TODO.md) and implemented there — never in this module's folder.
 - [ ] `findByEmail` matches across case and Unicode normalization forms
 - [ ] Seeding twice creates one row and does not rewrite the hash
 - [ ] `SEED_FORCE_RESET=true` does rewrite it

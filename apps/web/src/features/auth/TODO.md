@@ -75,6 +75,9 @@ make that acceptable are a strict CSP and never rendering untrusted HTML — see
   so it stays out of server logs and browser history.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/auth/TODO.md`](../../../../../tests/suites/web/auth/TODO.md) and implemented there — never in this module's folder.
 - [ ] Reloading the page keeps you logged in
 - [ ] An anonymous visit to a share link never touches the login screen
 - [ ] A failed Google login and a failed password login render the same message

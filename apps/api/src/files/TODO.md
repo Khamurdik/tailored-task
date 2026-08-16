@@ -51,6 +51,9 @@ Only one is the happy path. Handle all four explicitly.
 - Never delete an object referenced by any file version.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/files/TODO.md`](../../../../tests/suites/api/files/TODO.md) and implemented there — never in this module's folder.
 - [ ] `/complete` without an upload → 400, node stays pending
 - [ ] `/complete` with a size differing from the client's claim → the S3 value is stored
 - [ ] Non-PDF bytes with a PDF content type → rejected

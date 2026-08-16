@@ -63,6 +63,17 @@ record the README deliverable asks for.
 | --- | --- |
 | [`packages/shared`](packages/shared/TODO.md) | Zod schemas, inferred DTO types, error codes. The API contract. |
 
+### Tests
+
+| Module | One-line responsibility |
+| --- | --- |
+| [`tests`](tests/TODO.md) | Every test in the system, declared before it is written. Mirrors the module tree. |
+
+No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
+test *requirements*; [`tests/`](tests/TODO.md) turns those into 498 addressable,
+traceable declarations, grouped by what the user is trying to do and is where they are implemented. The first run is
+meant to be red — see [`tests/TODO.md`](tests/TODO.md) §4.
+
 ## Suggested order
 
 ```

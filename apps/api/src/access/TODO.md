@@ -46,6 +46,9 @@ never imports `nodes`.
   in the code.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/access/TODO.md`](../../../../tests/suites/api/access/TODO.md) and implemented there — never in this module's folder.
 - [ ] **Permission matrix**: owner / invited viewer / public token / stranger ×
       room / folder / file × read / write. Table-driven, pure, ~24 cases, runs
       in milliseconds. Cite this file in the README.

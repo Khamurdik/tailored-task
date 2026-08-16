@@ -42,3 +42,8 @@ uploads die on navigation.
 ## Done when
 20 files dropped into a folder, then immediately navigating two levels away,
 still completes and reports every result.
+
+## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/uploads/TODO.md`](../../../../../tests/suites/web/uploads/TODO.md) and implemented there — never in this module's folder.

@@ -4,8 +4,8 @@ Every version in this workspace is pinned exactly (no `^`, no `~`). This file
 records why, and — more importantly — records the four places where the newest
 release is *not* the right one.
 
-Verified against the npm registry on **2026-08-16**: all 53 required peer
-constraints across the four `package.json` files resolve with zero conflicts.
+Verified against the npm registry on **2026-08-16**: all 57 required peer
+constraints across the five `package.json` files resolve with zero conflicts.
 
 ## Runtime
 
@@ -14,7 +14,7 @@ constraints across the four `package.json` files resolve with zero conflicts.
 | Node | **26.7.0** (`.nvmrc`) | Chosen deliberately. See the caveat below. |
 | pnpm | **11.22.0** | Workspaces without a separate task runner. |
 
-All 67 pinned packages were checked against Node 26: 35 declare `engines.node`
+All 68 pinned packages were checked against Node 26: 35 declare `engines.node`
 and **none exclude it**. `jsdom@30` is the fussiest
 (`^22.22.2 || ^24.15.0 || >=26.0.0`) and names 26 explicitly.
 
@@ -79,14 +79,20 @@ ESM — which is its own well-known minefield with decorators and Jest — for n
 feature this project needs. Prisma 6 is still actively maintained (it holds the
 `prev` dist-tag) and uses the `prisma-client-js` generator with no adapter.
 
-### 3. Jest for the API, Vitest only for the web
+### 3. One runner — Vitest — in a separate `tests` package
 
-Vitest transforms with esbuild, and **esbuild does not implement
-`emitDecoratorMetadata`**. A NestJS suite under Vitest silently loses
-`design:paramtypes` and fails at injector time, unless you bolt on `unplugin-swc`.
-Jest 30 + `ts-jest` 29 uses the real TypeScript compiler, so tests see exactly
-what `nest build` produces. The web app has no decorators, so Vitest 4 is the
-natural fit there.
+Tests do not live in `apps/api` or `apps/web`; the whole suite is
+[`tests/`](../tests/TODO.md), and neither app package carries a runner.
+
+That made Jest unnecessary. The original reason for it still stands —
+**esbuild does not implement `emitDecoratorMetadata`**, so a NestJS suite under
+plain Vitest loses `design:paramtypes` and fails at injector time — but with a
+single test project the fix is one plugin rather than a second toolchain:
+`unplugin-swc@1.5.11` transforms the `api-*` projects with SWC, which does emit
+the metadata. Jest, `ts-jest`, and `@types/jest` are gone.
+
+One runner also means one reporter and one run history, which is the whole point
+of the file-based run log.
 
 ### 4. `@vitejs/plugin-react-swc`, not `@vitejs/plugin-react`
 

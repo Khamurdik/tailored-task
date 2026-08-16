@@ -1,0 +1,24 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+
+    "types": ["node", "vitest/globals"],
+
+    "paths": {
+      "@api/*": ["../apps/api/src/*"],
+      "@web/*": ["../apps/web/src/*"],
+      "@support/*": ["./src/support/*"]
+    }
+  },
+  "include": ["src", "suites", "vitest.config.ts", "playwright.config.ts", "eslint.config.mjs"]
+}

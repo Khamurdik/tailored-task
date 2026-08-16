@@ -52,6 +52,9 @@ Any feature folder. Dependencies point inward only.
 - The refresh token never appears in a URL, a query key, or a log line.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/shared/TODO.md`](../../../../tests/suites/web/shared/TODO.md) and implemented there — never in this module's folder.
 - [ ] Ten simultaneous requests hitting 401 trigger exactly **one** refresh call
       and all ten succeed on retry
 

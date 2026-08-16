@@ -52,6 +52,9 @@ web origin and `http://localhost:5173`, exposing `ETag`; IAM policy scoped to
 lifecycle rule aborting incomplete multipart uploads after 1 day.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/storage/TODO.md`](../../../../tests/suites/api/storage/TODO.md) and implemented there — never in this module's folder.
 - [ ] Presigned PUT rejects a body whose content-type differs from the signature
       (integration, against a real bucket, run once by hand)
 - [ ] `head` returns null for a missing key rather than throwing

@@ -48,3 +48,8 @@ The wire format.
 
 ## Done when
 Renaming a response field breaks the build in both apps.
+
+## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/contract/TODO.md`](../../tests/suites/contract/TODO.md) and implemented there — never in this module's folder.

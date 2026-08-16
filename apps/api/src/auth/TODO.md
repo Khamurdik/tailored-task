@@ -113,6 +113,9 @@ The cost is honest and must be written down rather than argued away:
 - The refresh token in the database is a hash, never the token itself.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/auth/TODO.md`](../../../../tests/suites/api/auth/TODO.md) and implemented there — never in this module's folder.
 - [ ] Login → access a protected route → refresh → the old refresh token is dead
 - [ ] Replaying a rotated refresh token invalidates the family
 - [ ] Wrong password, unknown email, and a password-less user return

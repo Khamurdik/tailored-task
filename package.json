@@ -2,7 +2,7 @@
   "name": "dataroom",
   "version": "0.1.0",
   "private": true,
-  "description": "Virtual data room — monorepo root. See docs/ARCHITECTURE.md",
+  "description": "Virtual data room \u2014 monorepo root. See docs/ARCHITECTURE.md",
   "packageManager": "pnpm@11.22.0",
   "engines": {
     "node": ">=26.0.0",
@@ -15,8 +15,8 @@
     "build": "pnpm --filter @dataroom/shared build && pnpm -r --filter \"./apps/*\" build",
     "typecheck": "pnpm -r typecheck",
     "typecheck:next": "npx -y -p typescript@7 tsc --noEmit -p apps/api/tsconfig.json",
-    "test": "pnpm -r test",
-    "test:e2e": "pnpm --filter @dataroom/web test:e2e",
+    "test": "pnpm --filter @dataroom/tests test",
+    "test:e2e": "pnpm --filter @dataroom/tests test:e2e",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,yaml,yml,css}\"",
@@ -24,7 +24,10 @@
     "db:generate": "pnpm --filter @dataroom/api db:generate",
     "db:migrate": "pnpm --filter @dataroom/api db:migrate",
     "db:studio": "pnpm --filter @dataroom/api db:studio",
-    "clean": "pnpm -r exec rm -rf dist node_modules/.cache .turbo && rm -rf node_modules"
+    "clean": "pnpm -r exec rm -rf dist node_modules/.cache .turbo && rm -rf node_modules",
+    "test:unit": "pnpm --filter @dataroom/tests test:unit",
+    "test:integration": "pnpm --filter @dataroom/tests test:integration",
+    "history": "pnpm --filter @dataroom/tests history"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

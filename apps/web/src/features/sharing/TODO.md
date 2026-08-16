@@ -30,3 +30,8 @@ Nothing.
 
 ## Done when
 An owner can see every path by which a node is exposed and shut each one down.
+
+## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/sharing/TODO.md`](../../../../../tests/suites/web/sharing/TODO.md) and implemented there — never in this module's folder.

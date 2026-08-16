@@ -27,6 +27,9 @@ Nothing. Reads `nodes`.
   read. This is the easiest place in the system to accidentally leak.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/search/TODO.md`](../../../../tests/suites/api/search/TODO.md) and implemented there — never in this module's folder.
 - [ ] A stranger's search returns nothing from a room they cannot see
 - [ ] A shared-folder visitor sees results only from within that subtree
 - [ ] Accented and Cyrillic queries match

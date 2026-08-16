@@ -51,6 +51,9 @@ Anything. If a helper needs a domain type, it belongs in that domain module.
   Postgres strings reach a client.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/common/TODO.md`](../../../../tests/suites/api/common/TODO.md) and implemented there — never in this module's folder.
 - [ ] `suggestConflictName` table test, including extensionless names, dotfiles,
       names already ending in `(3)`, and names at the 255-char cap
 - [ ] `normalizeName` maps NFD and NFC forms of the same string to one value

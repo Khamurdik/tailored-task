@@ -31,3 +31,8 @@ Nothing.
 ## Done when
 A PDF opens from both the owner view and a public link, and a stale modal left
 open for five minutes recovers on interaction.
+
+## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/viewer/TODO.md`](../../../../../tests/suites/web/viewer/TODO.md) and implemented there — never in this module's folder.

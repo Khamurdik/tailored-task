@@ -43,3 +43,8 @@ Nothing. All state is server state.
 ## Done when
 A 5-level tree is navigable by keyboard and mouse, every dialog handles its
 error case, and no state renders as a bare spinner.
+
+## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/explorer/TODO.md`](../../../../../tests/suites/web/explorer/TODO.md) and implemented there — never in this module's folder.

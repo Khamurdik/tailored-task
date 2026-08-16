@@ -29,6 +29,9 @@ The `/s/:token` route.
 - This route never redirects to login.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/web/public-view/TODO.md`](../../../../../tests/suites/web/public-view/TODO.md) and implemented there — never in this module's folder.
 - [ ] Playwright: owner uploads → shares → **second browser context with no
       cookies** opens the link, sees read-only content, cannot mutate → owner
       revokes → link 404s. This single test demonstrates the whole product.

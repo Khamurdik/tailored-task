@@ -54,6 +54,9 @@ exactly. A mismatch silently skips or duplicates rows at page boundaries, and
 it only manifests with non-ASCII names.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/nodes/TODO.md`](../../../../tests/suites/api/nodes/TODO.md) and implemented there — never in this module's folder.
 - [ ] **Property test**: 200 random ops (create / move / rename / delete), then
       assert every path matches its ancestor chain, `depth == segments - 1`, no
       cycles, and no live node under a deleted parent. This is the highest-value

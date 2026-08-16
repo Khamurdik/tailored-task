@@ -59,6 +59,9 @@ the destination is shared. A direct grant on the node itself survives a move.
 State this in the README — reviewers poke at exactly this.
 
 ## Tests
+
+> These are the **requirements**. They are declared as addressable, traceable tests in
+> [`tests/suites/api/sharing/TODO.md`](../../../../tests/suites/api/sharing/TODO.md) and implemented there — never in this module's folder.
 - [ ] Create link → access anonymously → revoke → 404, same test
 - [ ] **Scoping**: a grant on folder B, then request sibling folder C's id with
       B's token → 404 (not 403, not 200)

@@ -13,10 +13,6 @@
     "start": "node dist/main",
     "start:prod": "node dist/main",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:e2e": "jest --testRegex \".e2e-spec.ts$\" --runInBand",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "db:generate": "prisma generate",
@@ -25,7 +21,8 @@
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "test": "echo \"tests live in @dataroom/tests\" && exit 0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1111.0",
@@ -53,48 +50,11 @@
     "@nestjs/schematics": "11.1.0",
     "@nestjs/testing": "11.2.1",
     "@types/express": "5.0.6",
-    "@types/jest": "30.0.0",
     "@types/node": "26.2.0",
-    "@types/supertest": "7.2.1",
     "eslint": "10.8.1",
-    "fast-check": "4.9.0",
-    "jest": "30.4.2",
     "prisma": "6.19.3",
-    "supertest": "7.2.2",
-    "ts-jest": "29.4.12",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0"
-  },
-  "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": ".",
-    "roots": [
-      "<rootDir>/src",
-      "<rootDir>/test"
-    ],
-    "testRegex": ".*\\.spec\\.ts$",
-    "testEnvironment": "node",
-    "transform": {
-      "^.+\\.ts$": [
-        "ts-jest",
-        {
-          "tsconfig": "<rootDir>/tsconfig.json"
-        }
-      ]
-    },
-    "moduleNameMapper": {
-      "^@dataroom/shared$": "<rootDir>/../../packages/shared/src/index.ts"
-    },
-    "collectCoverageFrom": [
-      "src/**/*.ts",
-      "!src/**/*.module.ts",
-      "!src/main.ts"
-    ],
-    "coverageDirectory": "coverage"
   },
   "prisma": {
     "seed": "node prisma/seed.ts"
