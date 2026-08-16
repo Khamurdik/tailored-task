@@ -5,7 +5,23 @@ Stores grants and answers one question: what role does this actor have on this
 node? Every authorization decision in the system routes through here.
 
 ## Owns
-`shares` table, and the definition of `Role`.
+`shares` table, and the definition of `Role`:
+
+```ts
+type Role = 'none' | 'viewer' | 'editor' | 'owner';   // ordered, ascending
+```
+
+`@RequireAccess(verb)` maps to a minimum role:
+
+| Verb | Satisfied by |
+| --- | --- |
+| `read` | `viewer`, `editor`, `owner` |
+| `write` | `editor`, `owner` |
+| `own` | `owner` |
+
+`max(role)` is the ordinal maximum over that ordering, which is why the union is
+declared in ascending order rather than alphabetically. `editor` is defined and
+**never issued** — see the invariant below.
 
 ## Public surface
 - `resolveAccess(input): Role` — **pure function, zero dependencies**
@@ -29,6 +45,11 @@ never imports `nodes`.
       resolveAccess({ actor, node: NodeSnapshot, grants: Grant[] }): Role
       ```
       Ancestor ids come from `node.path` — no recursion, no extra query.
+- [ ] `NodeSnapshot.ancestorsDeleted` is what makes the deleted-ancestor rule
+      below computable. The old five-field snapshot carried only the node's own
+      `deletedAt`, so a pure function had no way to see a deleted ancestor and
+      the invariant was unenforceable as written. `NodesRepository` computes the
+      flag in the query it already runs
 - [ ] `NodeAccessGuard`: load snapshot → load grants for `ancestorIds + self` in
       one query → resolve → attach `req.access` → **404 on denial**
 - [ ] Effective role is `max(role)` across self and all ancestors
@@ -39,7 +60,11 @@ never imports `nodes`.
   `deleted_at != null`. This is the second line of defence behind atomic
   cascade delete; if the cascade ever became async, this is what stops a stale
   grant resolving.
-- Expired and revoked grants are excluded in the SQL, not filtered in JS.
+- Expired and revoked grants are excluded in the SQL, not filtered in JS. So
+  `resolveAccess` never evaluates `expires_at`: by the time a grant reaches it,
+  expiry has already been applied. `API-ACCESS-007` therefore asserts the query,
+  not the resolver — which is why it is declared against the repository rather
+  than as a pure-function case, and why it needs no clock stub.
 - `role` is an enum with `editor` already defined and never issued. Adding
   per-user roles later is a data change, not a schema change — this is the
   answer to the README's third scaling question, and it should be visibly true

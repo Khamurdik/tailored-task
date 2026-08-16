@@ -1,8 +1,28 @@
-# search — L3 · optional
+# search — L3 · DEFERRED — do not implement
+
+> **Status: not in scope.** Second priority, behind the core path and `jobs`,
+> ahead of `audit`. Do not start this module and do not add the `pg_trgm`
+> extension or the GIN index "for later".
+>
+> This file stays in the repo as a design note, so the decision is visible and
+> the module can be picked up later without rediscovering it.
+
+## Why it is deferred, not cut
+
+The hard part is not the search — it is that results must be filtered by
+permission *before* pagination, while `access` is built to resolve one node at a
+time behind a guard. Per-row resolution over a result page is N queries; doing
+it in SQL puts the grant logic in a second place, which is exactly what the
+pure-resolver design exists to prevent. It also destabilises the keyset cursor,
+because a permission-filtered set is not a contiguous index range.
+
+Nothing depends on this module, so deferring it is free. When it is picked up,
+the cheap version is to restrict search to subtrees the actor can already read
+wholesale — that sidesteps the filtering problem entirely and covers the real
+use case.
 
 ## Purpose
-Find files and folders by name within one room. Extra credit — cut this before
-cutting anything else.
+Find files and folders by name within one room.
 
 ## Owns
 Nothing. Reads `nodes`.

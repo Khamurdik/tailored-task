@@ -37,7 +37,13 @@ is decided before this module is called), `auth`.
   - [ ] Retry loop on `23505`, recomputing the suffix, capped at 10 attempts
 - [ ] `NodesService`
   - [ ] Cascade soft-delete via path prefix, in one transaction, emitting
-        `node.deleted` with the subtree id list so `access` can revoke grants
+        `node.deleted` with the subtree id list. **`sharing` owns the listener**
+        — this module only emits. (`access` is storage and resolution; the
+        use-case that revokes grants sits above it.)
+        Known limitation: the id list is unbounded, so deleting a large room
+        puts every descendant id in one payload. Accepted for now; the fix when
+        it hurts is to pass the path prefix instead, which is how every other
+        cascade in the system already works
   - [ ] Listing: keyset paginated, folders before files,
         `ORDER BY type, name COLLATE "C", id`
   - [ ] Breadcrumbs derived from `path` in the same response — no second query

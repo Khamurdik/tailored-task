@@ -19,12 +19,33 @@ export default defineConfig({
   test: {
     projects: [
       {
+        // The coverage gate. Parses every `## Declared tests` table and emits
+        // one failing test per declared ID with no implementation, which is
+        // what makes run #1 red — see TODO.md §4.
+        //
+        // It lives in src/, not suites/, so it needs its own project: the
+        // other four only include `suites/**` and would never collect it.
+        //
+        // It discovers implementations by scanning test titles across BOTH
+        // runners' spec files (suites/**, including the Playwright journeys)
+        // rather than by reading run output, so a JOURNEY-* declaration counts
+        // as implemented without Playwright having run.
+        test: {
+          name: 'gate',
+          root: r('.'),
+          include: ['src/registry/**/*.spec.ts'],
+          environment: 'node',
+          globals: true,
+        },
+      },
+      {
         // The wire contract. Pure zod, no app, no database. Milliseconds.
         test: {
           name: 'contract',
           root: r('.'),
           include: ['suites/contract/**/*.spec.ts'],
           environment: 'node',
+          globals: true,
         },
       },
       {
@@ -35,6 +56,7 @@ export default defineConfig({
           root: r('.'),
           include: ['suites/api/**/*.unit.spec.ts'],
           environment: 'node',
+          globals: true,
         },
       },
       {
@@ -45,6 +67,7 @@ export default defineConfig({
           root: r('.'),
           include: ['suites/api/**/*.int.spec.ts'],
           environment: 'node',
+          globals: true,
           fileParallelism: false,
           testTimeout: 30_000,
           globalSetup: ['src/support/global-setup.ts'],
@@ -56,6 +79,7 @@ export default defineConfig({
           root: r('.'),
           include: ['suites/web/**/*.spec.tsx', 'suites/web/**/*.spec.ts'],
           environment: 'jsdom',
+          globals: true,
           setupFiles: ['src/support/web-setup.ts'],
         },
       },

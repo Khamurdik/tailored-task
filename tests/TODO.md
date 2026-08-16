@@ -48,6 +48,7 @@ File naming decides which project runs a file, so it is not cosmetic:
 
 | Pattern | Project | Environment | Cost |
 | --- | --- | --- | --- |
+| `src/registry/**/*.spec.ts` | `gate` | node | ms |
 | `suites/contract/**/*.spec.ts` | `contract` | node | ms |
 | `suites/api/**/*.unit.spec.ts` | `api-unit` | node, no I/O | ms |
 | `suites/api/**/*.int.spec.ts` | `api-integration` | node + real Postgres | seconds |
@@ -82,6 +83,25 @@ tell whether a case is missing.
 - **Kind** — `unit` · `integration` · `property` · `security` · `journey`
 - **Pri** — `P0` must pass before the module is considered done · `P1` should ·
   `P2` nice to have
+
+### `P0` is deliberately rare
+
+**66 of 511.** An earlier revision had 332, which is not a prioritisation — if
+two thirds of the suite blocks a module, nothing does. A row earns `P0` only if
+its failure is one of:
+
+- **a leak** — a node, a token, or the existence of a user or id escapes
+- **silent corruption** — the tree, a path, a counter, or a stored hash goes
+  wrong and nothing surfaces it until much later
+- **the product not working at all** — sign in, share, open the link
+
+Everything else is `P1`, which still means *write it*. The point of the split is
+that `green / P0` answers "can this ship" and `green / declared` answers "how
+far along is it". Two different questions, and one number cannot serve both.
+
+The distribution that falls out is the intended one: `access` 7, `auth` 9,
+`nodes` 8, `sharing` 6, `public-view` 6 — and `explorer`, the largest suite in
+the repo at 80 rows, has exactly 1.
 
 ### Format rules the parser depends on
 - [ ] Tables live under a `## Declared tests` heading
@@ -129,17 +149,35 @@ another class this repo owns.
 A TDD harness that reports "0 tests, all passing" on day one is lying — it has
 no idea how much is missing. So the registry drives the report:
 
-- [ ] `src/registry/` parses every `## Declared tests` table into a registry
+- [ ] `src/registry/` parses every `## Declared tests` table into a registry.
+      Only `###` groups **under a `## Declared tests` heading** are read, so a
+      `## Personas` table like the one in `suites/journeys` is not a declaration
 - [ ] A **coverage gate** suite compares declarations against implementations
       and emits one failing test per declared ID with no implementation, titled
       with that ID
-- [ ] Result: run #1 has ~0 green and **498 red** — one per declaration.
+- [ ] The gate runs as its own Vitest project, `gate`, because it lives in
+      `src/` and every other project includes only `suites/**`. Without a
+      project of its own it is never collected, and run #1 is green by accident
+      — which is the exact failure this section exists to prevent
+- [ ] **Implementations are discovered by scanning spec files, not run output.**
+      The gate greps test titles across all of `suites/**` — the four Vitest
+      projects *and* the Playwright journeys. Reading Vitest results instead
+      would leave all 39 `JOURNEY-*` declarations permanently unimplemented,
+      since Vitest never collects them
+- [ ] Rows marked `RETIRED` keep their number but leave the `declared` count.
+      The row stays so the ID is never reused; the requirement is gone
+- [ ] Result: run #1 has ~0 green and **511 red** — one per live declaration.
       Progress is `implemented / declared` and `green / declared`, both real
       numbers rather than a percentage of whatever tests happen to exist
 - [ ] An implementation whose ID is not declared also fails the gate. Tests do
       not appear from nowhere
 - [ ] The gate is the only place `it.todo` is acceptable. Everywhere else, an
       unfinished test fails
+- [ ] **CI gates on `newly failing`, never on `green == declared`.** The suite
+      is red by design until the last declaration lands, so a red build is the
+      resting state and cannot be the merge signal. Until `pnpm history diff`
+      exists (§5), CI runs `--project gate --project contract --project api-unit`
+      and gates on those; `api-integration` needs a database and is opt-in
 
 ---
 
@@ -165,7 +203,7 @@ runs/
   "durationMs": 48213,
   "git": { "sha": "a1b2c3d", "branch": "main", "dirty": false },
   "projects": ["contract", "api-unit", "api-integration", "web-unit"],
-  "declared": 498,
+  "declared": 511,
   "implemented": 37,
   "totals": { "passed": 31, "failed": 6, "skipped": 0 },
   "failedIds": ["API-NODES-011", "API-ACCESS-004"]
@@ -204,6 +242,12 @@ Needed before the first integration test, and not before.
 - [ ] `global-setup.ts` — start Postgres, run `prisma migrate deploy`, seed a
       known fixture set, expose the URL. Prefer a disposable database per run
       over cleaning between tests
+- [ ] **Postgres comes from `docker-compose`**, not `testcontainers` and not a
+      Neon branch. One `docker-compose.test.yml` with a pinned `postgres:18`
+      image, started by `global-setup` if it is not already up. `testcontainers`
+      is a dependency and a Docker-API integration for something a compose file
+      does in six lines; a Neon branch needs credentials in CI and network on
+      every run. The compose file also doubles as the local dev database
 - [ ] `app.ts` — boot the Nest app once per file via `Test.createTestingModule`,
       with `STORAGE` bound to the in-memory adapter from `storage/TODO.md`
 - [ ] `factories.ts` — `makeRoom`, `makeFolder`, `makeFile`, `makeUser`,

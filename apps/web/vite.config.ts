@@ -1,9 +1,11 @@
-/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react-swc';
-import { defineConfig } from 'vitest/config';
+// Plain Vite, not `vitest/config`. This package carries no test runner — the
+// whole suite is @dataroom/tests — so `vitest` does not resolve from here and
+// importing it made `vite dev` and `vite build` fail to load their own config.
+import { defineConfig } from 'vite';
 
 export default defineConfig({
   // Tailwind v4 runs as a Vite plugin. There is no tailwind.config.js and no
@@ -34,17 +36,8 @@ export default defineConfig({
     sourcemap: true,
   },
 
-  test: {
-    environment: 'jsdom',
-    globals: true,
-    setupFiles: ['./src/test/setup.ts'],
-    css: true,
-    // Playwright owns everything under e2e/; Vitest must not try to run it.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'html'],
-      exclude: ['**/*.config.*', '**/dist/**', 'src/test/**'],
-    },
-  },
+  // No `test` block. Web unit tests are the `web-unit` project in
+  // tests/vitest.config.ts, and they resolve `@/*` through tests/tsconfig.json.
+  // The old block here pointed at ./src/test/setup.ts and an e2e/ directory,
+  // neither of which exists since the suite moved.
 });

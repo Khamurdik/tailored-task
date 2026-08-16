@@ -27,12 +27,30 @@ Any feature folder. Dependencies point inward only.
       the token store
 - [ ] Response interceptor: 401 → `POST /auth/refresh` with the refresh token
       **in the JSON body** → store the rotated pair → retry once
-- [ ] **Single-flight refresh.** Concurrent 401s must await one refresh call and
-      then all retry. Firing one refresh per in-flight request rotates the token
-      N times, and every rotation after the first is a replay of an
-      already-rotated token — which the server treats as theft and kills the
-      whole family. The symptom is random logouts under a burst of parallel
-      requests, and it will not reproduce on a slow single-request page
+- [ ] **Single-flight refresh, across tabs — not just within one.** Concurrent
+      401s must await one refresh call and then all retry. Firing one refresh
+      per in-flight request rotates the token N times, and every rotation after
+      the first is a replay of an already-rotated token — which the server
+      treats as theft and kills the whole family. The symptom is random logouts
+      under a burst of parallel requests, and it will not reproduce on a slow
+      single-request page.
+
+      A per-tab promise does not cover this. Every tab shares one `localStorage`
+      and therefore one refresh token, so two tabs hitting 401 at the same
+      moment each start their own "single" flight, and the second one replays.
+      This is the same bug across a boundary that a per-tab guard cannot see.
+- [ ] Hold the refresh in a **`navigator.locks.request('auth-refresh', …)`**.
+      Every tab queues on one named lock; the winner refreshes, the rest wake up
+      after it and re-read the rotated pair from the token store rather than
+      refreshing again. All requests everywhere stall until it resolves, which
+      is the intended behaviour
+- [ ] The waiters must re-check the store **inside** the lock before refreshing.
+      A tab that acquires the lock second and refreshes anyway is the exact
+      replay this is meant to prevent — the lock serialises, it does not
+      deduplicate
+- [ ] `navigator.locks` is unavailable on insecure non-localhost origins. Fall
+      back to the per-tab promise there and accept the race; do not fall back to
+      a `localStorage` mutex, which has no atomic compare-and-set
 - [ ] A failed refresh clears the token store once and redirects to login —
       never loops
 - [ ] Attach `X-Share-Token` automatically when the route is a share route
@@ -50,6 +68,7 @@ Any feature folder. Dependencies point inward only.
   through `tokenStore`, so the storage format can change without a search across
   features.
 - The refresh token never appears in a URL, a query key, or a log line.
+- At most one refresh request is in flight **per browser profile**, not per tab.
 
 ## Tests
 
@@ -57,6 +76,8 @@ Any feature folder. Dependencies point inward only.
 > [`tests/suites/web/shared/TODO.md`](../../../../tests/suites/web/shared/TODO.md) and implemented there — never in this module's folder.
 - [ ] Ten simultaneous requests hitting 401 trigger exactly **one** refresh call
       and all ten succeed on retry
+- [ ] Two tabs hitting 401 at the same moment trigger **one** refresh between
+      them, and neither is logged out
 
 ## Done when
 An expired share link produces a designed screen, not a spinner or a toast, and

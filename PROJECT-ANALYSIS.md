@@ -37,7 +37,7 @@ target stack was legible from the specs before it was ever declared:
 | Deploy | Vercel (web) + AWS App Runner (api) + Neon (db) | [auth](apps/api/src/auth/TODO.md), [common](apps/api/src/common/TODO.md), [jobs](apps/api/src/jobs/TODO.md) |
 
 The prose repeatedly addresses "the brief", "the README deliverable", and
-"reviewers", and marks two modules as *extra credit*. This is a **take-home
+"reviewers", and defers two modules outright. This is a **take-home
 engineering assignment**, and the skeleton is deliberately doubling as the
 design-record deliverable.
 
@@ -68,7 +68,7 @@ source of truth, `path` a rebuildable index.
 
 ## 3. Structure
 
-### Backend — five layers, 11 modules (10 in scope; `audit` is deferred)
+### Backend — five layers, 11 modules (9 in scope; `search` and `audit` are deferred)
 
 ```
 L4   jobs          audit                 reactive / scheduled
@@ -106,7 +106,7 @@ why it is a good split.
 
 **One inverted dependency, declared and bounded.** `access` needs node paths;
 `nodes` controllers need the access guard. `access` declares a `NODE_LOOKUP`
-port with a five-field `NodeSnapshot` and never imports `nodes`;
+port with a six-field `NodeSnapshot` and never imports `nodes`;
 `NodesRepository` satisfies it; the binding happens once in `AppModule`. The
 stated rule — *no `forwardRef` anywhere; if you reach for one, a boundary is
 wrong* — is the useful part. It converts a style preference into a falsifiable
@@ -123,10 +123,16 @@ about the trade. It buys the elimination of an entire vulnerability class —
 with no ambient credential, CSRF has no mechanism — plus mobile and non-browser
 clients that need no cookie jar, and it deletes the `SameSite=None` problem that
 a Vercel-plus-App-Runner split would otherwise force. It costs the one thing an
-httpOnly cookie is actually good at: a successful XSS can read the token. That
-makes the strict CSP, the 15-minute access TTL, and server-side revocation on
-logout load-bearing rather than nice-to-have. The spec says so plainly, which is
-the right way to hold a trade like this.
+httpOnly cookie is actually good at: a successful XSS can read the token.
+
+An earlier version of this section credited three mitigations equally — strict
+CSP, a 15-minute access TTL, and server-side revocation. That was too generous
+to two of them. The refresh token lives in the same `localStorage`, so an XSS
+takes seven days of access regardless of the access TTL, and revocation reaches
+only the refresh family; a JWT stays valid until it expires. **The CSP is the
+mitigation.** The TTL is now 1 day precisely because it was buying nothing, and
+`auth/TODO.md` says so rather than implying a bound that does not exist. Holding
+a trade honestly means naming which half of it actually works.
 
 **Denial is 404, never 403.** A 403 confirms an id exists, which is an
 enumeration oracle across every room in the system. Paired with a `SessionGuard`
@@ -210,24 +216,28 @@ would cost to discover during implementation instead of now.
 - **No event bus owner.** Four events are now specified (`user.created`,
   `user.authenticated`, `node.deleted`, and the node lifecycle events that
   `audit` would have consumed) and the decoupling story depends on them, but no
-  module provides the emitter and no file defines the payloads. `common` is the
-  natural home; its public surface doesn't mention it. This is the last
-  unresolved seam.
-- **Versioning is half-present.** The storage key scheme is
-  `rooms/{rootId}/{nodeId}/{versionId}` and `files` states "never delete an
-  object referenced by any file version", but no module owns a versions table and
-  no responsibility mentions creating one. Either a latent feature or a key
-  scheme that should be simplified until it exists.
-- **`Role` is never defined.** `access` owns "the definition of `Role`", mentions
-  `none`, `editor`, and `max(role)`, and `@RequireAccess` takes
-  `'read' | 'write' | 'own'`. The role union itself, and the mapping from roles
-  to those three verbs, appear nowhere.
-- **Constants are mostly unvalued.** `MAX_DEPTH` (32) and the GET TTL (60s) are
-  pinned; `MAX_FILE_SIZE`, `MAX_NAME_LENGTH` (255 is implied by `sanitizeName`),
-  and `PAGE_SIZE` are named but never given numbers.
-- **PDF-only is left conditional.** "Verify magic bytes `%PDF-` **if** enforcing
-  PDF-only" — while the viewer is PDF-specific. The decision is deferred in a
-  place where it changes validation, the viewer, and the error taxonomy.
+  module provides the emitter and no file defines the payloads. **Resolved:**
+  `common` owns the bus, and the payload contract lives in `packages/shared`
+  so both ends of every listener compile against one definition.
+- ~~**Versioning is half-present.**~~ **Resolved by simplification.** The
+  `{versionId}` segment is gone from the key scheme and the "never delete an
+  object referenced by any file version" invariant with it — there was no
+  versions table for either to refer to. Both come back together if versioning
+  is ever built.
+- ~~**`Role` is never defined.**~~ **Resolved.** `access/TODO.md` now declares
+  `'none' | 'viewer' | 'editor' | 'owner'` in ascending order — which is what
+  makes `max(role)` an ordinal maximum — plus the verb-to-minimum-role table.
+- ~~**Constants are mostly unvalued.**~~ **Resolved.** All four are valued in
+  `packages/shared`, which is now their sole owner: `MAX_DEPTH` 32,
+  `MAX_NAME_LENGTH` 255, `MAX_FILE_SIZE` 50 MiB, `PAGE_SIZE` 50. `common`
+  re-exports rather than declaring its own, and `MAX_FILE_SIZE_BYTES` came out
+  of `.env` — a limit the browser must also enforce cannot live in server env.
+- ~~**PDF-only is left conditional.**~~ **Resolved.** `UPLOAD_FILE_POLICY` is
+  `pdf-only` (default) or `all-files`, enforced on the object's bytes at
+  `/complete`. The `Content-Disposition` rule — `inline` only for
+  `application/pdf` — sits deliberately *outside* the toggle, because otherwise
+  flipping one config value opens a stored-XSS path on the bucket origin that
+  the app's CSP cannot cover. See `files/TODO.md`.
 - **No workspace tooling.** `apps/*` + `packages/shared` implies a pnpm/turbo
   monorepo; nothing configures one. Path aliases, the shared package's build, and
   the layering rules themselves (which are exactly what an ESLint boundaries rule

@@ -16,9 +16,9 @@ rather than three layers away as a confusing runtime shape mismatch.
 
 | ID | Behaviour | Kind | Pri |
 | --- | --- | --- | --- |
-| CONTRACT-001 | Every exported DTO type is inferred from a schema, never hand-written | unit | P0 |
-| CONTRACT-002 | A response missing a required field fails to parse | unit | P0 |
-| CONTRACT-003 | A response with an unknown extra field is rejected, not silently passed through | unit | P0 |
+| CONTRACT-001 | Every exported DTO type is inferred from a schema, never hand-written | unit | P1 |
+| CONTRACT-002 | A response missing a required field fails to parse | unit | P1 |
+| CONTRACT-003 | A response with an unknown extra field is rejected, not silently passed through | unit | P1 |
 | CONTRACT-004 | `ErrorCode` union covers every code the API is specified to emit | unit | P0 |
 
 ### Request validation
@@ -27,8 +27,8 @@ rather than three layers away as a confusing runtime shape mismatch.
 | --- | --- | --- | --- |
 | CONTRACT-005 | Login request rejects a malformed email before it reaches the API | unit | P1 |
 | CONTRACT-006 | No register schema is exported | security | P0 |
-| CONTRACT-007 | Name fields reject strings over `MAX_NAME_LENGTH` | unit | P0 |
-| CONTRACT-008 | Upload init rejects a size over `MAX_FILE_SIZE` | unit | P0 |
+| CONTRACT-007 | Name fields reject strings over `MAX_NAME_LENGTH` | unit | P1 |
+| CONTRACT-008 | Upload init rejects a size over `MAX_FILE_SIZE` | unit | P1 |
 
 ### Cross-cutting guarantees
 
@@ -36,8 +36,8 @@ rather than three layers away as a confusing runtime shape mismatch.
 | --- | --- | --- | --- |
 | CONTRACT-009 | Cursor fields are opaque strings, never structured objects | unit | P1 |
 | CONTRACT-010 | `JobStatus` union matches the six statuses jobs declares | unit | P1 |
-| CONTRACT-011 | `nextRunAt` parses as an ISO string and rejects a Luxon object | unit | P0 |
-| CONTRACT-012 | No Prisma model type is reachable from this package's exports | unit | P0 |
+| CONTRACT-011 | `nextRunAt` parses as an ISO string and rejects a Luxon object | unit | P1 |
+| CONTRACT-012 | No Prisma model type is reachable from this package's exports | unit | P1 |
 
 ## Notes
 - CONTRACT-001 and CONTRACT-012 are type-level assertions. Use `expectTypeOf`

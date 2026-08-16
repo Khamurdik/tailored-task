@@ -15,13 +15,40 @@ shape, pagination, and string handling. Contains no domain concepts.
 - `AppError`, `ErrorCode`, `PrismaExceptionFilter`
 - `encodeCursor` / `decodeCursor`
 - `normalizeName`, `sanitizeName`, `suggestConflictName`
-- Constants: `MAX_DEPTH`, `MAX_FILE_SIZE`, `MAX_NAME_LENGTH`, `PAGE_SIZE_DEFAULT`
+- The event emitter and the typed event map (see below)
+- Constants: re-exported from `packages/shared`, which **owns** them. This
+  module declares none of its own
 
 ## Depends on
-Nothing.
+`zod`, and `packages/shared` for the `ErrorCode` union and the constants.
+Nothing else.
 
 ## Must not depend on
-Anything. If a helper needs a domain type, it belongs in that domain module.
+Any domain module — `nodes`, `users`, `auth`, `access`, and everything above
+them. If a helper needs a domain type, it belongs in that domain module.
+
+> This used to read "Depends on: Nothing / Must not depend on: Anything", which
+> was never true — the config schema is zod and the error envelope needs
+> `ErrorCode`. The intent was always "no domain modules"; it now says that.
+
+## Events
+
+This module owns the bus, because every other candidate is a domain module and
+would drag its concerns into the layer below it.
+
+- [ ] A typed emitter over `@nestjs/event-emitter`
+- [ ] The payload contract lives in `packages/shared` so both sides of every
+      listener compile against one definition:
+      ```ts
+      'user.created'       { userId, email }
+      'user.authenticated' { userId, email }
+      'node.deleted'       { rootId, nodeIds }
+      ```
+- [ ] Emitters and listeners, so the wiring is greppable in one place:
+      `user.created` — seeder → `sharing` · `user.authenticated` — `auth` →
+      `sharing` · `node.deleted` — `nodes` → `sharing`
+- [ ] Listener failures are logged and swallowed. An event handler must never
+      fail the request that emitted it
 
 ## Responsibilities
 - [ ] Zod config schema; **crash at boot** on a missing var with a readable message
@@ -29,6 +56,8 @@ Anything. If a helper needs a domain type, it belongs in that domain module.
         is validated by the same schema the seeder uses
   - [ ] `GOOGLE_CLIENT_ID` is optional — a checkout without Google credentials
         must still boot and serve password login
+  - [ ] `UPLOAD_FILE_POLICY` is `'pdf-only' | 'all-files'`, **defaulting to
+        `pdf-only`**, so an unconfigured deployment is the restrictive one
   - [ ] No cookie secret and no CSRF secret. This API sets no cookies
 - [ ] `PrismaService` with `onModuleInit` connect and graceful shutdown hook
 - [ ] Global exception filter mapping `P2002 → 409 NAME_CONFLICT` (carrying

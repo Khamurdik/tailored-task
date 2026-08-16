@@ -3,15 +3,29 @@ packages:
   - "packages/*"
   - "tests"
 
-# pnpm 10+ blocks dependency lifecycle scripts by default. Anything that needs
-# a postinstall to fetch a native binary or generate code MUST be listed here,
-# or it fails at runtime with a confusing "engine not found" / "module not
-# found" error rather than at install time.
-onlyBuiltDependencies:
-  - "@prisma/client"
-  - "@prisma/engines"
-  - prisma
-  - "@tailwindcss/oxide"
-  - "@swc/core"
-  - esbuild
-  - unrs-resolver
+# pnpm blocks dependency lifecycle scripts by default. Anything that needs a
+# postinstall to fetch a native binary or generate code must be allowed here.
+#
+# The key is `allowBuilds` (a map), NOT `onlyBuiltDependencies` (a list).
+# pnpm 11 still *reads* the old key — `pnpm config get onlyBuiltDependencies`
+# returns it — but no longer acts on it, so an allowlist written the old way is
+# a silent no-op. Verified 2026-08-16: with only the list present, `pnpm install`
+# ended in `ERR_PNPM_IGNORED_BUILDS` naming these four, and pnpm rewrote this
+# file with a stub `allowBuilds` block asking to be filled in.
+#
+# Nothing here actually breaks when the scripts are skipped — every native
+# binding in this stack ships as a prebuilt platform package
+# (`@swc/core-linux-x64-gnu`, `@tailwindcss/oxide-linux-x64-gnu`) rather than
+# being compiled on install, and Prisma's engines ship inside `@prisma/engines`.
+# The allowlist is here so that stays true by intent rather than by luck.
+allowBuilds:
+  "@prisma/client": true
+  "@prisma/engines": true
+  prisma: true
+  "@tailwindcss/oxide": true
+  "@swc/core": true
+
+# Not listed, because they are not in the tree:
+#   esbuild        — Vite 8 bundles with rolldown, not esbuild
+#   unrs-resolver  — not a dependency of anything here
+# Re-add them if either ever appears.

@@ -50,14 +50,19 @@ installing a new Node — or carried over with
 
 TypeScript 7 is the Go-native compiler. It is dramatically faster and it *does*
 emit `design:paramtypes`, so Nest's DI would work — but **7.0 ships without the
-programmatic compiler API**, and three things in this stack are API consumers:
+programmatic compiler API**, and two things in this stack are API consumers:
 
 - `nest build` calls `createProgram()` / `program.emit()` with its own transformers
-- `ts-jest@29.4.12` — peer range `typescript: ">=4.3 <7"`
 - `typescript-eslint@8.67.0` — peer range `typescript: ">=4.8.4 <6.1.0"`
 
-Both peer ranges *exclude 7 outright*, so this is not a judgement call; a TS 7
-pin fails resolution. TypeScript 6.0.3 is the newest release all three accept.
+That peer range *excludes 7 outright*, so this is not a judgement call; a TS 7
+pin fails resolution. TypeScript 6.0.3 is the newest release both accept.
+
+> An earlier revision of this file listed `ts-jest@29.4.12` (peer
+> `typescript: ">=4.3 <7"`) as a third consumer. Jest was removed when the suite
+> moved to `tests/` — see §3 below — so that argument is gone. The pin still
+> holds on the two above; it is a weaker case than it was, and worth re-checking
+> rather than inheriting.
 
 You still get the fast checker without the risk:
 

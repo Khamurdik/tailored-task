@@ -72,6 +72,17 @@ export interface NodeSnapshot {
   ownerId: string;
   path: string;
   deletedAt: Date | null;
+  /**
+   * True if ANY ancestor on `path` is soft-deleted.
+   *
+   * Without this the resolver cannot enforce its own rule. `access` must return
+   * `none` when the target *or any ancestor* is deleted, but a snapshot that
+   * carries only its own `deletedAt` makes the ancestor half uncomputable — and
+   * `resolveAccess` is a pure function, so it cannot go and look. One extra
+   * boolean, computed by the repository in the query that already reads the
+   * node, keeps the resolver pure and the invariant true.
+   */
+  ancestorsDeleted: boolean;
 }
 
 export interface NodeLookupPort {
@@ -170,7 +181,11 @@ These hold system-wide. Each has a test somewhere.
 5. Names are NFC-normalized before the uniqueness check. `café` in NFD and NFC
    are different byte strings that render identically.
 6. Nothing user-controlled ever enters `path`. A `%` or `_` in a name would
-   break every prefix query in the system.
+   break every prefix query in the system. Prefix matching is also only
+   unambiguous because **every id is a fixed-length UUID** — with variable-width
+   ids, `LIKE '/a/b%'` would match `/a/bc` and every cascade would silently
+   over-reach. Ids are UUIDs and stay UUIDs; changing that breaks soft-delete,
+   move, and stats at once.
 7. Effective permission is the maximum role across the node's own grants and
    all its ancestors' grants.
 8. `size_bytes` comes from S3's `HeadObject`, never from the client.

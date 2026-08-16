@@ -16,9 +16,9 @@ suite. This suite is the payoff for that design decision — cite it in the READ
 | ID | Behaviour | Kind | Pri |
 | --- | --- | --- | --- |
 | API-ACCESS-001 | Permission matrix: {owner, invited viewer, public token, stranger, anonymous} × {room, folder, file} × {read, write, own} | security | P0 |
-| API-ACCESS-002 | A grant on a grandparent resolves on a grandchild | unit | P0 |
-| API-ACCESS-003 | Effective role is the maximum across self and all ancestors | unit | P0 |
-| API-ACCESS-004 | When two ancestor grants differ, the higher role wins | unit | P0 |
+| API-ACCESS-002 | A grant on a grandparent resolves on a grandchild | unit | P1 |
+| API-ACCESS-003 | Effective role is the maximum across self and all ancestors | unit | P1 |
+| API-ACCESS-004 | When two ancestor grants differ, the higher role wins | unit | P1 |
 
 ### Grants that must not resolve
 
@@ -28,7 +28,7 @@ suite. This suite is the payoff for that design decision — cite it in the READ
 | API-ACCESS-006 | A grant on a soft-deleted target resolves to `none` | security | P0 |
 | API-ACCESS-007 | An expired grant resolves to `none` without stubbing the clock | unit | P0 |
 | API-ACCESS-008 | A revoked grant resolves to `none` | unit | P0 |
-| API-ACCESS-009 | Expired and revoked grants are excluded in SQL, not filtered in JS | integration | P0 |
+| API-ACCESS-009 | Expired and revoked grants are excluded in SQL, not filtered in JS | integration | P1 |
 
 ### Denial and boundaries
 
@@ -38,7 +38,7 @@ suite. This suite is the payoff for that design decision — cite it in the READ
 | API-ACCESS-011 | A denied request and a nonexistent id are byte-identical responses | security | P0 |
 | API-ACCESS-012 | Ancestor ids come from `node.path` — resolution issues one grant query regardless of depth | integration | P1 |
 | API-ACCESS-013 | The `editor` role is defined in the enum and never issued by any code path | unit | P1 |
-| API-ACCESS-014 | No module outside `access` reads the `shares` table | security | P0 |
+| API-ACCESS-014 | No module outside `access` reads the `shares` table | security | P1 |
 
 ## Notes
 - **API-ACCESS-001 is the flagship.** Table-driven, ~24+ cases, pure, runs in

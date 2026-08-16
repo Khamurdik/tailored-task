@@ -12,7 +12,23 @@ The wire format.
 - Request/response schemas per endpoint
 - Types inferred via `z.infer` — **never hand-written**
 - `ErrorCode` union
-- Shared constants: `MAX_FILE_SIZE`, `MAX_NAME_LENGTH`, `MAX_DEPTH`, `PAGE_SIZE`
+- Shared constants — **this package is their sole owner**; `common` re-exports
+  and declares none of its own:
+
+  | Constant | Value |
+  | --- | --- |
+  | `MAX_DEPTH` | 32 |
+  | `MAX_NAME_LENGTH` | 255 |
+  | `MAX_FILE_SIZE` | 52_428_800 (50 MiB) |
+  | `PAGE_SIZE` | 50 |
+
+  These are compile-time constants, not config. The client validates against the
+  same numbers the server enforces, which is the whole point of the package —
+  `MAX_FILE_SIZE` in particular cannot be an env var, because then
+  `CONTRACT-008` and `WEB-UPLOADS-020` would be asserting against a value the
+  bundle does not have. (`MAX_FILE_SIZE_BYTES` was removed from `.env.example`
+  for exactly this reason.) `PAGE_SIZE` replaces the old `PAGE_SIZE_DEFAULT`
+  name that `common` used; one constant, one name.
 
 ## Depends on
 `zod` only. No Nest, no React, no Prisma.
@@ -33,8 +49,14 @@ The wire format.
 - [ ] Error codes:
       ```ts
       'NAME_CONFLICT' | 'GONE' | 'CYCLIC_MOVE' | 'DEPTH_LIMIT'
-      | 'FILE_TOO_LARGE' | 'NOT_FOUND' | 'UNAUTHENTICATED' | 'RATE_LIMITED'
+      | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE_TYPE' | 'NOT_FOUND'
+      | 'UNAUTHENTICATED' | 'RATE_LIMITED' | 'CONFLICT' | 'VALIDATION_FAILED'
       ```
+      `UNSUPPORTED_FILE_TYPE` is what `/complete` returns under
+      `UPLOAD_FILE_POLICY=pdf-only`. `CONFLICT` is what `jobs` returns when a
+      run is already in flight and `onOverlap` is `reject`. `VALIDATION_FAILED`
+      covers every 400 the `ValidationPipe` raises — without it, `CONTRACT-004`
+      ("the union covers every code the API emits") is red against the specs
       One code covers every login failure. Splitting it into
       `BAD_PASSWORD` / `NO_SUCH_USER` would hand the client an email oracle that
       the API is deliberately built to withhold

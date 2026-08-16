@@ -28,12 +28,46 @@ The `pending → active` transition and its failure modes.
 - [ ] `POST /uploads/:id/complete`
   - [ ] `HeadObject` to verify the object exists
   - [ ] Take `size_bytes` and `content_type` **from S3**, never from the client
-  - [ ] Verify magic bytes `%PDF-` if enforcing PDF-only
+  - [ ] Enforce `UPLOAD_FILE_POLICY` — see below. Under `pdf-only`, read the
+        first bytes of the object and reject anything not starting `%PDF-`
   - [ ] Flip to `active`, bump ancestor rollups
 - [ ] `POST /uploads/:id/abort` — best-effort cleanup on user cancel
 - [ ] `GET /nodes/:id/content-url` — permission-checked, 60s presigned GET
 - [ ] `reapPending` — delete `pending` nodes older than 1h, returning the counts
       so a job run reports what it actually did rather than just "succeeded"
+
+## File type policy — enforced, and switchable
+
+`UPLOAD_FILE_POLICY` is a validated config value with two settings:
+
+| Value | Behaviour |
+| --- | --- |
+| `pdf-only` | **Default.** `/complete` reads the object's leading bytes and rejects anything that does not start `%PDF-`. The node is left `pending` for the reaper and the caller gets 415 `UNSUPPORTED_FILE_TYPE`. |
+| `all-files` | Any type is accepted. Nothing else changes. |
+
+### Why this is a toggle and not a constant
+
+The product is PDF-shaped — the viewer is a PDF viewer — so `pdf-only` is the
+setting the system is designed around, and it is the default so that an
+unconfigured deployment is the safe one. The toggle exists because "can it hold
+other documents" is a product question a data room will eventually be asked, and
+the answer should be a config change rather than a code change.
+
+### The rule the toggle must never reach
+
+**`Content-Disposition` is decided by the object's actual content type, not by
+the policy.** Only `application/pdf` is ever served `inline`; everything else is
+served `attachment`. This is specified in `storage/TODO.md` and is deliberately
+*outside* the toggle.
+
+The reason is a chain that only exists when the three parts are read together:
+uploads are served from the S3 origin, an `inline` disposition makes the browser
+render rather than download, and the viewer puts that URL in an `<iframe>`.
+Under `all-files`, an uploaded `.html` or `.svg` would then execute as script on
+the S3 origin — and the app's CSP, which is the mitigation the whole
+`localStorage` token decision rests on (`auth/TODO.md`), does not apply to that
+origin. Flipping a config value must not be able to open a stored-XSS path into
+the session token, so the disposition rule does not participate in the toggle.
 
 ## The four states
 Only one is the happy path. Handle all four explicitly.
@@ -48,7 +82,13 @@ Only one is the happy path. Handle all four explicitly.
 ## Invariants
 - Client-reported size and content type are advisory only; S3 is authoritative.
 - Soft-deleting a node never deletes the S3 object.
-- Never delete an object referenced by any file version.
+- ~~Never delete an object referenced by any file version.~~ Dropped with the
+  `{versionId}` key segment — there is no versions table for it to refer to.
+  Reinstate both together if versioning is ever built.
+- Type enforcement reads the object's **bytes**, never the declared content
+  type. A client that declares `application/pdf` and uploads HTML is the case
+  this exists for.
+- No value of `UPLOAD_FILE_POLICY` causes non-PDF bytes to be served `inline`.
 
 ## Tests
 

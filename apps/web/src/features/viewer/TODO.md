@@ -15,9 +15,13 @@ Nothing.
 ## Responsibilities
 - [ ] Fetch `/nodes/:id/content-url` on open — never cache the signed URL, it
       expires in 60 seconds
-- [ ] `<iframe>` on the signed URL. Reach for `react-pdf` only if page
-      navigation is actually wanted; the browser viewer is better than a
-      half-built one.
+- [ ] `<iframe>` on the signed URL — **only when the node's content type is
+      `application/pdf`**. Reach for `react-pdf` only if page navigation is
+      actually wanted; the browser viewer is better than a half-built one.
+- [ ] Any other type renders the unsupported-type state with a download action,
+      never an `<iframe>`. Under `UPLOAD_FILE_POLICY=all-files` the file could
+      be HTML; the API already serves it `attachment` (`storage/TODO.md`), and
+      the client must not undo that by framing it
 - [ ] Route-addressable (`/rooms/:id/f/:fileId`) so a view is linkable and back
       works
 - [ ] Download button reusing the same URL

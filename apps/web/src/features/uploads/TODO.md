@@ -35,9 +35,42 @@ uploads die on navigation.
 - [ ] Invalidate the target folder's children on each completion, not once at the end
 - [ ] Surface the resolved name when it differs: "uploaded as report (2).pdf"
 
+## Showing the queue in other tabs
+
+Wanted: open the app in a second tab and see the same upload progress. Partly
+possible, and the limit is worth stating before anyone builds it.
+
+**What can be shared: the display.** Mirror queue state onto a
+`BroadcastChannel('uploads')` — one message per state transition plus a throttled
+progress tick (~4/s; per-byte events would flood the channel). Other tabs render
+from the mirror. A new tab asks for a snapshot on mount and the owning tab
+replies.
+
+**What cannot be shared: the transfer.** The bytes move through an `XMLHttpRequest`
+belonging to the tab that started them. No browser API hands a live request to
+another tab, and re-issuing it elsewhere would upload the file twice. So:
+
+- [ ] Every queue item carries the id of the tab that owns it
+- [ ] Non-owning tabs render progress read-only — **no cancel, no retry**. A
+      cancel button that silently does nothing is worse than no button
+- [ ] If the owning tab goes away, its in-flight items are marked `interrupted`
+      in the surviving tabs, with retry offered there. Retry restarts the
+      upload in the tab that clicked it; it does not resume. Detect via a
+      heartbeat on the channel, not `beforeunload`, which does not fire reliably
+- [ ] The already-specified `pending` reaper cleans up whatever this leaves
+      behind server-side, so a dropped tab costs an orphan row for at most an
+      hour and nothing else
+- [ ] **Optional.** Single-tab uploading is the requirement; this is polish. Cut
+      it before cutting anything in the core path
+
+Do not put the mirror in `localStorage`. It would fire a `storage` event per
+progress tick in every tab, and the token store's own `storage` listener is
+already load-bearing for cross-tab logout.
+
 ## Invariants
 - Navigating away does not cancel uploads.
 - The panel is dismissible but reappears on a new upload.
+- A transfer is owned by exactly one tab, and only that tab can cancel it.
 
 ## Done when
 20 files dropped into a folder, then immediately navigating two levels away,

@@ -105,10 +105,14 @@ type JobStatus =
       from the two timestamps rather than a stopwatch variable
 - [ ] Persist `result` on success and `error_message` / `error_stack` on failure.
       A failed run that records no reason is barely better than no record
-- [ ] **Startup sweep**: on boot, any `running` row whose job is not actually in
-      flight becomes `interrupted`. Without this a crash leaves a permanently
-      `running` row, and an `onOverlap: 'skip'` job then skips forever — the
-      failure mode is a job that silently never runs again
+- [ ] **Startup sweep**: on boot, every `running` row becomes `interrupted`.
+      This is only sound because the scheduler runs on exactly one instance
+      (§5) — a booting instance can safely assume any `running` row is its own
+      corpse. Without the sweep a crash leaves a permanently `running` row, and
+      an `onOverlap: 'skip'` job then skips forever — the failure mode is a job
+      that silently never runs again
+- [ ] The same rule applied outside boot needs the age test, not the blanket
+      one: a run older than `timeoutMs` (floor: one hour) is dead. See §5
 - [ ] A job that throws must never take the process down. Catch at the runner
 
 ---
@@ -154,18 +158,61 @@ delete. They are not node-scoped, so `access`'s `NodeAccessGuard` does not apply
 
 ---
 
-## 5. Concurrency across instances
+## 5. Concurrency — one instance, enforced by the platform
 
-The original plan was "one instance only, which `minSize: 1` gives us free".
-That is true today and silently false the first time the service scales out —
-two instances would run `hard-delete-expired` simultaneously.
+**Decided: the scheduler runs on exactly one instance, and that is a deployment
+constraint we accept rather than a problem we solve in application code.**
 
-- [ ] Claim each run with a Postgres advisory lock:
-      `pg_try_advisory_lock(hashtext($jobId))`, released in the same `finally`
-      that writes the terminal status
-- [ ] Failing to acquire the lock is a `skipped` run, not an error
-- [ ] This makes the job runner correct on N instances, costs one query, and
-      removes the deployment constraint entirely
+An earlier revision reached for `pg_try_advisory_lock(hashtext($jobId))` so the
+runner would be correct on N instances. Two things are wrong with it here:
+
+1. **It does not work on this stack.** A `pg_try_advisory_lock` is
+   *session*-scoped and must be released on the same connection that took it.
+   Prisma hands out pooled connections per query with no such guarantee, and
+   Neon's pooled endpoint is PgBouncer in transaction mode, where session-level
+   advisory locks do not hold at all. The lock would appear to work in dev
+   against a direct connection and silently stop working in production.
+2. **It contradicts §2.** The startup sweep marks any `running` row as
+   `interrupted` on boot. With two instances, a booting instance cannot tell a
+   crashed run from one that the other instance is legitimately executing, so
+   it corrupts live runs. The sweep and multi-instance scheduling cannot both
+   be correct without a heartbeat, and a heartbeat is more machinery than this
+   earns.
+
+- [ ] Pin the API service to a single instance (App Runner `minSize: 1`,
+      `maxSize: 1`). One config value, and it is the thing actually being
+      relied on
+- [ ] Assert it at boot: if `JOBS_SCHEDULER_ENABLED` is true on more than one
+      instance nothing detects it, so make the flag the switch. Instances that
+      run with it false register no cron jobs and still serve the read and
+      manual-trigger endpoints
+- [ ] Write the constraint into the README next to the deploy instructions. An
+      undocumented "must not scale out" is a constraint that gets violated by
+      someone who never knew about it
+
+### The failure this leaves, and the guard for it
+
+One instance removes the concurrent-run problem. It does not remove the problem
+the advisory lock was *also* covering: a process that dies mid-run leaves a
+`running` row forever, and an `onOverlap: 'skip'` job then skips forever — a job
+that silently never runs again.
+
+- [ ] **Stale-run guard.** A `running` row whose `started_at` is older than its
+      job's `timeoutMs` (floor: one hour) is treated as dead. The startup sweep
+      applies it at boot; the runner applies it before claiming, so recovery does
+      not require a restart
+- [ ] That guard is why this does not need alerting to be safe. `GET /jobs`
+      showing `lastRun: interrupted` is the signal, and it costs nothing to
+      build. Slack/Grafana alerting on "a run has been `running` for over an
+      hour" is a genuinely good addition later, but it is monitoring on top of a
+      system that already self-heals, not the mechanism that makes it correct
+
+### If the service ever must scale out
+
+The upgrade path is written down so nobody rediscovers it: use
+`pg_advisory_xact_lock` inside the transaction that writes the run's terminal
+status (transaction-scoped locks survive PgBouncer), and replace the startup
+sweep with a heartbeat column the runner touches every few seconds.
 
 ---
 
@@ -212,8 +259,8 @@ problem it was built to detect. A run history that grows forever is the
 - [ ] A non-admin gets 404 from every endpoint in this module
 - [ ] Reaper leaves non-stale pending nodes alone
 - [ ] `reconcile-rollups` reports and repairs a deliberately corrupted counter
-- [ ] Advisory lock: two runners started together produce one `succeeded` and
-      one `skipped`
+- [ ] A `running` row older than `timeoutMs` is treated as dead and the job
+      runs again without a restart
 
 ## Done when
 `GET /jobs` lists all six with their next fire time and last outcome, any of

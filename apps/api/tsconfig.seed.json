@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // `prisma db seed` runs `node prisma/seed.ts` — Node 26 executes the file
+  // directly under type stripping, with no compile step. That imposes rules the
+  // rest of apps/api does not live under, so the seed gets its own config:
+  //
+  //  - Relative imports MUST carry an explicit `.ts` extension. Node detects
+  //    `import` syntax and resolves as ESM, where extensionless specifiers fail
+  //    with ERR_MODULE_NOT_FOUND. The rest of the package uses `node10`
+  //    resolution and is extensionless, which is why this is a separate config.
+  //  - allowImportingTsExtensions requires noEmit. That is fine: nothing here
+  //    is built. `nest build` skips this file via the "exclude" in tsconfig.json.
+  //
+  // Verified on Node 26.7.0.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["prisma/seed.ts"]
+}

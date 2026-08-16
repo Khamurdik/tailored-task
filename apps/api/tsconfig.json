@@ -17,13 +17,21 @@
     // framework, not by the constructor body.
     "strictPropertyInitialization": false,
 
-    // ts-jest and the Nest CLI both consume the emitted JS; isolatedModules
-    // would force `export type` churn across every barrel file for no gain here.
+    // The Nest CLI consumes the emitted JS; isolatedModules would force
+    // `export type` churn across every barrel file for no gain here.
     "isolatedModules": false,
 
-    "types": ["node", "jest"],
+    // Only "node". There is no test runner in this package — the whole suite
+    // lives in @dataroom/tests — so a "jest" entry here fails the typecheck
+    // with "Cannot find type definition file for 'jest'".
+    "types": ["node"],
     "incremental": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "prisma/**/*.ts"]
+
+  // No "test/**" — this package carries no tests. prisma/seed.ts is excluded
+  // and typechecked separately by tsconfig.seed.json, because it is the one
+  // file that must use explicit `.ts` import specifiers. See users/TODO.md.
+  "include": ["src/**/*.ts", "prisma/**/*.ts"],
+  "exclude": ["prisma/seed.ts"]
 }

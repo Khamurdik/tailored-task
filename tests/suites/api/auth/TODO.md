@@ -16,36 +16,36 @@ path may ever create a user.
 | API-AUTH-001 | A seeded user logs in with email and password | integration | P0 |
 | API-AUTH-002 | `POST /auth/register` does not exist — 404 from the router | security | P0 |
 | API-AUTH-003 | Wrong password and unknown email return byte-identical responses | security | P0 |
-| API-AUTH-004 | A user with a null `password_hash` fails password login identically | security | P0 |
-| API-AUTH-005 | Login timing does not distinguish unknown email from wrong password | security | P1 |
+| API-AUTH-004 | A user with a null `password_hash` fails password login identically | security | P1 |
+| API-AUTH-005 | Login timing for unknown email and wrong password stays within one order of magnitude over 50 samples | security | P1 |
 
 ### Tokens and sessions
 
 | ID | Behaviour | Kind | Pri |
 | --- | --- | --- | --- |
-| API-AUTH-006 | A valid access token reaches a protected route | integration | P0 |
-| API-AUTH-007 | Refresh rotates the pair and the old refresh token stops working | integration | P0 |
+| API-AUTH-006 | A valid access token reaches a protected route | integration | P1 |
+| API-AUTH-007 | Refresh rotates the pair and the old refresh token stops working | integration | P1 |
 | API-AUTH-008 | Replaying a rotated refresh token invalidates the whole family | security | P0 |
 | API-AUTH-009 | Logout revokes the family server-side, not just on the client | security | P0 |
 | API-AUTH-010 | The stored refresh token is a hash, never the token itself | security | P0 |
-| API-AUTH-011 | No response from this module carries a `Set-Cookie` header | security | P0 |
-| API-AUTH-012 | The refresh token is accepted in the request body and rejected as a query parameter | security | P0 |
-| API-AUTH-013 | `SessionGuard` yields `actor === null` for an anonymous request rather than 401 | integration | P0 |
-| API-AUTH-014 | `SessionGuard` resolves an actor from `X-Share-Token` | integration | P0 |
+| API-AUTH-011 | No response from this module carries a `Set-Cookie` header | security | P1 |
+| API-AUTH-012 | The refresh token is accepted in the request body and rejected as a query parameter | security | P1 |
+| API-AUTH-013 | `SessionGuard` yields `actor === null` for an anonymous request rather than 401 | integration | P1 |
+| API-AUTH-014 | `SessionGuard` resolves an actor from `X-Share-Token` | integration | P1 |
 
 ### Google sign-in and account linking
 
 | ID | Behaviour | Kind | Pri |
 | --- | --- | --- | --- |
-| API-AUTH-015 | Google login succeeds for a seeded user whose verified email matches | integration | P0 |
+| API-AUTH-015 | Google login succeeds for a seeded user whose verified email matches | integration | P1 |
 | API-AUTH-016 | Google login for an unknown email fails **and creates no user row** | security | P0 |
 | API-AUTH-017 | A Google token with `email_verified: false` is rejected | security | P0 |
 | API-AUTH-018 | A Google token with the wrong `aud` is rejected | security | P0 |
-| API-AUTH-019 | A Google token with the wrong issuer is rejected | security | P0 |
-| API-AUTH-020 | An expired Google token is rejected | security | P0 |
-| API-AUTH-021 | First Google login stores `google_sub` on the user row | integration | P0 |
-| API-AUTH-022 | After the Google account's email changes, `google_sub` still matches the same user | integration | P0 |
-| API-AUTH-023 | A password user and a Google login resolve to the same `userId` | integration | P0 |
+| API-AUTH-019 | A Google token with the wrong issuer is rejected | security | P1 |
+| API-AUTH-020 | An expired Google token is rejected | security | P1 |
+| API-AUTH-021 | First Google login stores `google_sub` on the user row | integration | P1 |
+| API-AUTH-022 | After the Google account's email changes, `google_sub` still matches the same user | integration | P1 |
+| API-AUTH-023 | A password user and a Google login resolve to the same `userId` | integration | P1 |
 
 ### Throttling, events, optional config
 
@@ -61,6 +61,9 @@ path may ever create a user.
 - API-AUTH-017..020 need a fake Google verifier. Do not call Google in tests;
   inject a signing key and mint tokens locally, so the negative cases are
   actually reachable.
-- API-AUTH-005 is inherently flaky as a strict timing assertion. Declare it, but
-  implement it as a coarse bound (same order of magnitude over N samples) or
-  skip it with a written reason rather than letting it flap.
+- API-AUTH-005 is now written as the coarse bound rather than leaving the choice
+  open: 50 samples each, compare medians, fail only if they differ by more than
+  10×. A strict equality assertion on timing flaps on any shared CI runner, and
+  a flapping security test gets muted, which is worse than a loose one. The
+  bound is still tight enough to catch the real bug — skipping the dummy-hash
+  compare entirely makes the unknown-email path ~100× faster.

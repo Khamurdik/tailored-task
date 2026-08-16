@@ -44,7 +44,7 @@ record the README deliverable asks for.
 | L2 | [`access`](apps/api/src/access/TODO.md) | Grants storage + permission resolution + route guards. |
 | L3 | [`sharing`](apps/api/src/sharing/TODO.md) | Share use-cases: issue links, invite users, revoke, cascade. |
 | L3 | [`files`](apps/api/src/files/TODO.md) | Upload lifecycle orchestration. Binds `nodes` to `storage`. |
-| L3 | [`search`](apps/api/src/search/TODO.md) | Name search scoped to a room. *Optional / extra credit.* |
+| L3 | [`search`](apps/api/src/search/TODO.md) | Name search scoped to a room. **Deferred — do not implement.** |
 | L4 | [`audit`](apps/api/src/audit/TODO.md) | Append-only event log. **Deferred — do not implement.** |
 | L4 | [`jobs`](apps/api/src/jobs/TODO.md) | Scheduled cleanup as queryable job objects: every run has a status, every job can be triggered by hand. |
 
@@ -73,9 +73,10 @@ record the README deliverable asks for.
 | [`tests`](tests/TODO.md) | Every test in the system, declared before it is written. Mirrors the module tree. |
 
 No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
-test *requirements*; [`tests/`](tests/TODO.md) turns those into 498 addressable,
-traceable declarations, grouped by what the user is trying to do and is where they are implemented. The first run is
-meant to be red — see [`tests/TODO.md`](tests/TODO.md) §4.
+test *requirements*; [`tests/`](tests/TODO.md) turns those into 511 addressable,
+traceable declarations, grouped by what the user is trying to do, and is where
+they are implemented. The first run is meant to be red — see
+[`tests/TODO.md`](tests/TODO.md) §4.
 
 ## Suggested order
 
@@ -83,21 +84,50 @@ meant to be red — see [`tests/TODO.md`](tests/TODO.md) §4.
 common → storage → users → nodes → auth → access → sharing → files
        → web/shared → web/auth → web/explorer → web/uploads
        → web/sharing → web/public-view → web/viewer
-       → jobs → search
+       → jobs
 ```
 
-`search` is extra credit. `audit` is **deferred and out of scope** — third
-priority, behind `jobs` and `search`. Cut `search` before cutting anything in
-the core path.
+Two modules are **deferred and out of scope**: [`search`](apps/api/src/search/TODO.md)
+(permission-filtered pagination is the hard part, and it is not worth the risk
+here) and [`audit`](apps/api/src/audit/TODO.md). Both stay in the repo as design
+notes. Neither has a dependent, which is what makes deferring them free.
+
+The [`nodes`](apps/api/src/nodes/TODO.md) table schema is still an open decision
+and is deliberately not blocking: `common`, `storage`, `packages/shared`, the
+test harness, and the registry/coverage gate can all be built against it being
+unwritten. Settle it before `nodes` itself.
 
 ## Authentication at a glance
 
 - **No registration.** Users are provisioned from `.env` by the Prisma seed
-  step, which runs as part of `db:migrate`.
+  step, which runs as part of `db:migrate`. That is a **local** workflow —
+  `prisma migrate deploy` does not run seeds, so production provisioning is a
+  deliberate one-off `pnpm db:seed`. The runbook is in
+  [`users/TODO.md`](apps/api/src/users/TODO.md).
 - **Email and password is primary**, hashed with argon2id.
 - **Google login is secondary** and links to an existing account. It never
-  creates one.
+  creates one, and it is optional — leave `VITE_GOOGLE_CLIENT_ID` /
+  `GOOGLE_CLIENT_ID` unset and the button is not rendered at all, so a checkout
+  without Google credentials still runs on password login.
 - **No cookies.** Bearer tokens in `localStorage`, refresh token in the request
   body — so CSRF cannot occur and mobile clients need no cookie jar. The
-  trade-off (XSS can read the token) and its mitigations are written down in
+  trade-off (XSS reads both tokens) and its mitigations are written down in
   [`apps/api/src/auth/TODO.md`](apps/api/src/auth/TODO.md).
+
+### Known limitations, stated rather than hidden
+
+- **Google account linking is first-come-first-served.** The first Google
+  identity presenting a verified email that matches a seeded user claims that
+  account, and `google_sub` is then stored permanently. There is no confirmation
+  step from an already-authenticated session. That is acceptable here because
+  every account is provisioned by an operator who controls the email addresses;
+  a real deployment should require the link to be confirmed while signed in.
+- **A presigned GET cannot be revoked once issued.** The 60-second TTL is the
+  entire mitigation. Revoking a share does not kill a URL already handed out.
+- **The scheduler runs on exactly one instance** — see
+  [`jobs/TODO.md`](apps/api/src/jobs/TODO.md) §5. Do not scale the API service
+  past one instance without reading it first.
+- **Share failures are indistinguishable by design.** Invalid, revoked, expired,
+  and deleted links all render one screen. The four-screen alternative and the
+  sign-off it requires are in
+  [`public-view/TODO.md`](apps/web/src/features/public-view/TODO.md).

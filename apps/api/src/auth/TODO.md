@@ -59,8 +59,8 @@ This system has no public signup. Accounts are provisioned out of band — see
       "no account for this email", which turns Google login into a user oracle
 
 ### Tokens — localStorage, not cookies
-- [ ] Access token, 15 min, returned in the response body, sent as
-      `Authorization: Bearer`
+- [ ] Access token, **1 day** (`JWT_ACCESS_TTL`), returned in the response body,
+      sent as `Authorization: Bearer`. Refresh token 7 days
 - [ ] Refresh token returned in the response body and sent in the **JSON body**
       of `POST /auth/refresh`. No `Set-Cookie` anywhere in this module
 - [ ] Rotate the refresh token on every use, with reuse detection: a replayed
@@ -93,16 +93,32 @@ things:
 
 The cost is honest and must be written down rather than argued away:
 
-> **A successful XSS reads the token.** An httpOnly cookie is not readable from
-> JavaScript; `localStorage` is. This trade is only acceptable alongside the
-> mitigations below, and they are not optional.
+> **A successful XSS reads both tokens.** An httpOnly cookie is not readable
+> from JavaScript; `localStorage` is — and the refresh token lives there too, so
+> what an attacker takes is seven days of access, not one day.
 
-- [ ] Strict CSP on the web app: no `unsafe-inline`, no `unsafe-eval`
+Be precise about which mitigations actually do work, because an earlier draft of
+this file credited the access TTL with more than it delivers:
+
+- [ ] Strict CSP on the web app: no `unsafe-inline`, no `unsafe-eval`.
+      **This is the one that matters** — it is what stops the XSS, and every
+      other item on this list is damage control after it has already failed
 - [ ] Never `dangerouslySetInnerHTML` with server or user data
-- [ ] Access TTL stays at 15 minutes — it bounds the stolen-token window
-- [ ] Refresh rotation with reuse detection stays, and is what makes a stolen
-      refresh token detectable rather than silent
-- [ ] Logout is server-side revocation, so a stolen token can be killed
+- [ ] Non-PDF uploads are never served `inline` (`storage/TODO.md`). Without
+      that rule the bucket origin becomes an XSS vector the CSP cannot cover
+- [ ] Refresh rotation with reuse detection, which makes a stolen refresh token
+      *detectable* — after the fact, on the next legitimate refresh. Detection,
+      not prevention
+- [ ] Logout is server-side revocation of the refresh family
+
+**What the access TTL does not do.** A JWT is not revocable; only the refresh
+family is. At `JWT_ACCESS_TTL=1d`, logout — or a detected theft — leaves a
+stolen access token working for up to 24 hours. The 1-day value is a deliberate
+product choice (the churn of a 15-minute token is not worth paying for a bound
+that a co-resident refresh token already defeats), but it must not be described
+as bounding the exposure window. If that window ever needs to be real, the fix
+is a server-side check against a revocation list on each request, not a shorter
+TTL.
 
 ## Invariants
 - The guard never 401s on a missing token. Routes opt into requiring a user.
