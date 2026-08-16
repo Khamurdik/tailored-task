@@ -4,7 +4,7 @@
   "private": true,
   "description": "Data room API — NestJS 11 + Prisma 6 + PostgreSQL",
   "engines": {
-    "node": ">=24.15.0"
+    "node": ">=26.0.0"
   },
   "scripts": {
     "dev": "nest start --watch",
@@ -54,7 +54,7 @@
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
     "@types/jest": "30.0.0",
-    "@types/node": "24.13.3",
+    "@types/node": "26.2.0",
     "@types/supertest": "7.2.1",
     "eslint": "10.8.1",
     "fast-check": "4.9.0",

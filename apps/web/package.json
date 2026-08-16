@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Data room web client — React 19 + Vite 8 + Tailwind 4 + shadcn/ui",
   "engines": {
-    "node": ">=24.15.0"
+    "node": ">=26.0.0"
   },
   "scripts": {
     "dev": "vite",
@@ -48,7 +48,7 @@
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.4",
-    "@types/node": "24.13.3",
+    "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react-swc": "4.3.3",

@@ -5,7 +5,7 @@
   "description": "Virtual data room — monorepo root. See docs/ARCHITECTURE.md",
   "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=24.15.0",
+    "node": ">=26.0.0",
     "pnpm": ">=11.0.0"
   },
   "scripts": {

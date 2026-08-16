@@ -11,12 +11,38 @@ constraints across the four `package.json` files resolve with zero conflicts.
 
 | | Version | Why |
 | --- | --- | --- |
-| Node | **≥ 24.15.0** | v24 (Krypton) is Active LTS until 2028-04-30. v20 went EOL 2026-04-30; v22 is in maintenance. |
+| Node | **26.7.0** (`.nvmrc`) | Chosen deliberately. See the caveat below. |
 | pnpm | **11.22.0** | Workspaces without a separate task runner. |
 
-The `.15.0` is not cosmetic. `jsdom@30` declares
-`engines: ^22.22.2 || ^24.15.0 || >=26.0.0` — a plain `>=24` lets Node 24.13
-install and then fail. `react-router@8` independently requires `>=22.22.0`.
+All 67 pinned packages were checked against Node 26: 35 declare `engines.node`
+and **none exclude it**. `jsdom@30` is the fussiest
+(`^22.22.2 || ^24.15.0 || >=26.0.0`) and names 26 explicitly.
+
+### Node 26 is Current, not LTS — until 2026-10-28
+
+v26 released 2026-05-05 and becomes Active LTS on **2026-10-28**, roughly ten
+weeks out. Until then it gets the Current line's faster, more disruptive
+release cadence. Nothing in this stack objects; the only real consequence is
+Corepack, below. If a deployment target (App Runner, Docker base image) only
+offers LTS tags, pin the container to Node 24 and keep 26 locally — the
+`engines` floor is `>=26.0.0`, so relax it to `>=24.15.0` if you need both.
+
+### Corepack is gone from Node 25+
+
+**`corepack enable` does not work on Node 26.** Corepack shipped with Node from
+14.19.0 up to — but not including — 25.0.0. It is now a standalone package.
+
+pnpm 10+ reads the `packageManager` field itself
+(`manage-package-manager-versions`, on by default), so the simplest path is to
+install any recent pnpm globally and let it self-switch to 11.22.0:
+
+```bash
+npm i -g pnpm        # npm is still bundled with Node 26 (11.19.0)
+```
+
+Under nvm, global packages are per-Node-version, so this must be repeated after
+installing a new Node — or carried over with
+`nvm install 26.7.0 --reinstall-packages-from=24`.
 
 ## The four version decisions that go against "latest"
 
@@ -116,8 +142,12 @@ Build it before the apps — `pnpm build` at the root already orders this.
 ## Getting started
 
 ```bash
-corepack enable && corepack prepare pnpm@11.22.0 --activate
-node --version            # must be >= 24.15.0
+nvm install               # reads .nvmrc → 26.7.0
+nvm use
+npm i -g pnpm             # NOT corepack — unbundled since Node 25
+node --version            # v26.7.0
+pnpm --version            # self-switches to 11.22.0 via packageManager
+
 pnpm install
 cp apps/api/.env.example apps/api/.env   # then fill it in
 pnpm --filter @dataroom/shared build
