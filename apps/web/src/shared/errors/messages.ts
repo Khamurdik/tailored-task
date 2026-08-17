@@ -84,7 +84,7 @@ const TIMEOUT: Recovery = {
  * one is "check your wifi", the other is "it's not you". Collapsing them into
  * "something went wrong" makes both unactionable.
  */
-export function describe(error: AppError): Recovery {
+export function describeError(error: AppError): Recovery {
   if (error.kind === 'network') return NETWORK;
   if (error.kind === 'timeout') return TIMEOUT;
 

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createApiClient } from '@web/shared/api/client';
 import { request } from '@web/shared/api/request';
 import { AppError, toAppError } from '@web/shared/errors/app-error';
-import { describe as describeError, errorMessages } from '@web/shared/errors/messages';
+import { describeError, errorMessages } from '@web/shared/errors/messages';
 
 function axiosErrorWith(status: number, data: unknown): AxiosError {
   const config = { url: '/nodes', headers: new AxiosHeaders() } as AxiosResponse['config'];

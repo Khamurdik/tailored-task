@@ -57,5 +57,83 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  nodes Node[]
+
   @@map("users")
+}
+
+enum NodeType {
+  room
+  folder
+  file
+
+  @@map("node_type")
+}
+
+enum NodeState {
+  pending
+  active
+
+  @@map("node_state")
+}
+
+/// Owned by `nodes`. Rooms, folders and files are one self-referencing table
+/// discriminated by `type`.
+///
+/// **`parent_id` is the source of truth for ancestry.** `path` is a derived
+/// index over it — rebuildable by `rebuildSubtree`, and the reason six of the
+/// eight system-wide invariants exist. The materialized path was chosen over a
+/// recursive CTE and a closure table because every cascade in this system is a
+/// prefix operation: soft-delete, subtree stats and share scoping are all one
+/// predicate against it. See apps/api/src/nodes/TODO.md §Storage.
+///
+/// Nothing outside `nodes` may name `path`. The module publishes an ancestor
+/// **list**, so a later change of strategy stays inside this one file.
+model Node {
+  id String @id @default(uuid()) @db.Uuid
+
+  type  NodeType
+  state NodeState @default(active)
+
+  /// The room this belongs to. A room is its own root.
+  rootId String @map("root_id") @db.Uuid
+
+  /// Null only for a room. `Restrict` rather than `Cascade`: deletion here is
+  /// always soft, and a database-level cascade would silently make a hard
+  /// delete of a room destroy its subtree outside the transaction that logs it.
+  parentId String? @map("parent_id") @db.Uuid
+  parent   Node?   @relation("NodeChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children Node[]  @relation("NodeChildren")
+
+  ownerId String @map("owner_id") @db.Uuid
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+
+  /// NFC-normalized and sanitized before it ever reaches this column. Unique
+  /// among live siblings, enforced by a partial index — see the migration.
+  name String
+
+  /// `/id/id/id`, ancestors first, ending in self. Never user-controlled: a `%`
+  /// or `_` in a name would break every prefix query, and prefix matching is
+  /// only unambiguous because every segment is a fixed-width UUID.
+  path String
+
+  /// Ancestor count. 0 for a room, capped at 32.
+  depth Int
+
+  /// Files only. Authoritative value comes from S3's HeadObject, never a client.
+  sizeBytes   Int?    @map("size_bytes")
+  contentType String? @map("content_type")
+
+  /// Denormalized rollups for anything rendered in a list. A daily job
+  /// reconciles them; drift in a denormalized counter is the classic failure of
+  /// this pattern, so it is detected rather than assumed away.
+  subtreeFiles Int    @default(0) @map("subtree_files")
+  subtreeBytes BigInt @default(0) @map("subtree_bytes")
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([rootId])
+  @@map("nodes")
 }

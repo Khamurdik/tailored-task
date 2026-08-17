@@ -18,6 +18,11 @@ const alias = {
   '@api': r('../apps/api/src'),
   '@web': r('../apps/web/src'),
   '@support': r('./src/support'),
+  // The web app's own internal alias. Needed because these suites import web
+  // source, and that source imports itself through `@/`. Written with the
+  // trailing slash so it cannot shadow `@web/` — a bare `@` key would match
+  // that prefix too, and the failure reads as a missing file.
+  '@/': `${r('../apps/web/src')}/`,
 };
 
 /**
@@ -88,6 +93,8 @@ export default defineConfig({
           fileParallelism: false,
           testTimeout: 30_000,
           globalSetup: ['src/support/global-setup.ts'],
+          // `reflect-metadata` before any decorated class is evaluated.
+          setupFiles: ['src/support/api-setup.ts'],
         },
       },
       {

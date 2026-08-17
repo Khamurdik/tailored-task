@@ -4,7 +4,8 @@ How to run this system locally and how to put it somewhere. Kept current as
 modules land — if a step here is wrong, that is a bug in this file.
 
 **Status: 2026-08-17.** **The API boots, connects, and serves `/health`**, and
-**the web app has a placeholder data layer that runs with no backend at all**.
+**the web app builds, runs, and signs a user in with no backend at all** —
+`VITE_API_MODE=mock` answers every request from fixtures.
 `common`, `storage` and `users` are implemented, the first migration is applied,
 and the seed provisions users. Every command in §3 and §4 below has been run;
 the hosted sections in §5 are the target and are marked as such. §8 tracks what
@@ -133,9 +134,15 @@ The front end can be developed, demonstrated and reviewed with **no API, no
 database and no bucket running**:
 
 ```bash
-echo 'VITE_API_MODE=mock' >> apps/web/.env.local
-pnpm dev:web
+cp apps/web/.env.example apps/web/.env.local
+sed -i 's/^VITE_API_MODE=live/VITE_API_MODE=mock/' apps/web/.env.local
+pnpm dev:web            # http://localhost:5173
 ```
+
+Sign in with either fixture account — `ana@example.com` / `change-me-now`
+(admin) or `bo@example.com` / `change-me-too`. The passwords are in
+`apps/web/src/shared/mock/fixtures/users.json`; they are placeholders in a
+committed fixture file and are not secrets.
 
 Requests are answered from fixtures held in memory. The swap happens at the
 **axios adapter**, which is the lowest seam still inside the front end — so the
@@ -336,22 +343,24 @@ pnpm --filter @dataroom/tests exec vitest run --project gate --project contract 
 
 Tracked here rather than discovered at deploy time.
 
-- **The web app has a complete data layer but no UI.** `shared/` is done —
-  client, token store, cross-tab refresh lock, error mapping, query keys, and
-  the placeholder data layer. There are no components, no routes and no
-  `index.html` entry, so `pnpm dev:web` serves nothing to look at yet and
-  `pnpm build` cannot produce a web bundle. The data layer is exercised by 44
-  tests rather than by a browser.
-- **The API serves only `/health` and `/health/deep`.** `common`, `storage` and
-  `users` are in; `nodes`, `auth`, `access`, `sharing`, `links`, `files` and
-  `jobs` are not, so there is no login, no tree, and no upload.
-- **Only the `users` table exists.** One migration, `init_users`. The `nodes`
-  table is waiting on its storage-strategy decision (see
-  [`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage), and `shares`,
-  `refresh_tokens` and `job_runs` land with their modules.
-- **`tests/src/support/` does not exist**, so the `api-integration` project has
-  no `global-setup` and cannot run. The compose file it will use is present and
-  working.
+- **The web app has login and nothing else.** `shared/` and `features/auth` are
+  done — client, token store, cross-tab refresh lock, error mapping, query keys,
+  UI primitives, the login screen, route guards, and the placeholder data layer.
+  `pnpm dev:web` and `pnpm build` both work. What is behind the login is two
+  placeholder screens: `explorer`, `uploads`, `viewer`, `sharing` and
+  `public-view` are not built.
+- **The API serves only `/health` and `/health/deep`.** `common`, `storage`,
+  `users` and `nodes` are in, but `nodes` has **no controller yet** — the tree
+  works and nothing HTTP reaches it. `auth`, `access`, `sharing`, `links`,
+  `files` and `jobs` are not built, so there is no login and no upload.
+- **`users` and `nodes` exist.** Two migrations. `shares`, `refresh_tokens` and
+  `job_runs` land with their modules. The `nodes` storage strategy is decided —
+  materialized path, six indexes, seven CHECK constraints — see
+  [`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage.
+- **`api-integration` needs Docker running.** `pnpm test` includes it, and its
+  `global-setup` starts the compose service itself if it is not up, drops and
+  recreates a separate `dataroom_test` database, and applies migrations with
+  `migrate deploy`. CI gates on the three projects that need no database (§7).
 - ~~`pnpm typecheck` is red in `apps/web`.~~ **Resolved.** All four packages
   typecheck clean as of the first web source file. `TS18003: No inputs were
   found` is gone, so any typecheck failure from here on is a real one.

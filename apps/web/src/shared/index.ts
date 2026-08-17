@@ -8,7 +8,7 @@ export * as tokenStore from './auth/token-store';
 export { getShareToken, setShareToken, type Credential } from './auth/share-session';
 
 export { AppError, toAppError, type AppErrorKind } from './errors/app-error';
-export { describe as describeError, errorMessages, type Recovery } from './errors/messages';
+export { describeError, errorMessages, type Recovery } from './errors/messages';
 
 export { queryKeys } from './query/keys';
 export { createQueryClient, clearSession, shouldRetry } from './query/query-client';

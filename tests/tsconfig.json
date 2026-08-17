@@ -27,7 +27,8 @@
     "paths": {
       "@api/*": ["../apps/api/src/*"],
       "@web/*": ["../apps/web/src/*"],
-      "@support/*": ["./src/support/*"]
+      "@support/*": ["./src/support/*"],
+      "@/*": ["../apps/web/src/*"]
     }
   },
   "include": ["src", "suites", "vitest.config.ts", "playwright.config.ts", "eslint.config.mjs"]

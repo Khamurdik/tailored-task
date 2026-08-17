@@ -43,12 +43,14 @@ Phases 0–2 have landed. **The API boots, connects to Postgres, and serves
 | pnpm workspace, 5 packages, all configs | `nodes`, `auth`, `access`, `sharing`, `links`, `files`, `jobs` |
 | 548 declared tests in 92 groups, 80 of them `P0` | `shares`, `refresh_tokens`, `job_runs` tables |
 | **`packages/shared` — the full contract, CJS + ESM** | The integration harness (`tests/src/support/`) |
-| **`tests/src/registry` + the coverage gate — 77 of 548 implemented** | The run-log reporter and `pnpm history` |
+| **`tests/src/registry` + the coverage gate — 120 of 548 implemented** | The run-log reporter and `pnpm history` |
 | **`common` — config, Prisma, errors, cursor, names, bus, health** | |
 | **`storage` — port, S3 adapter, in-memory adapter** | |
-| **`users` — repository, service, seeder, `users` table, one migration** | |
-| **`docker-compose.test.yml` — Postgres 18, verified** | |
-| **`apps/web/shared` — client, token store, refresh lock, errors, query keys** | |
+| **`users` — repository, service, seeder, `users` table** | |
+| **`nodes` — materialized path, 6 indexes, 7 checks, property test green** | A `nodes` controller (no HTTP surface yet) |
+| **`docker-compose.test.yml` + the integration harness — verified** | |
+| **`apps/web` — app shell, 10 UI primitives incl. dialog, login, route guards** | `explorer`, `uploads`, `viewer`, `sharing`, `public-view` |
+| **`apps/web/shared` — client, token store, refresh lock, errors, query keys** | A dialog primitive (no Radix yet) |
 | **`apps/web/shared/mock` — the placeholder data layer** | |
 
 Verified by running, not by reading: the API boots and answers `/health` with
@@ -363,6 +365,91 @@ is what makes deferring it safe.
   code — the same lesson the registry scanner learned from the other direction
   in §4.
 
+### 3.16 `web/auth` and the app shell — UI primitives, and where Radix earns its place
+- The app now builds and runs: `index.html`, `main.tsx`, a router, eight UI
+  primitives, and a working login screen. 35 of the 49 `web/auth` declarations
+  are green, including all three `P0`s.
+- **Eight primitives hand-written, no Radix** — a button is a `<button>`, and
+  the eight are ~200 lines together. **`@radix-ui/react-dialog@1.1.23` was then
+  added on the user's instruction** for the dialog, which is where a headless
+  primitive genuinely earns its place: focus trap, focus return, `aria-modal`
+  with a labelled title, Escape, scroll lock, inert background. 24 packages,
+  zero peer warnings. That changes the "68 pinned packages" figure in §4 — it is
+  now 68 plus that subtree.
+- `ConfirmDialog` focuses **Cancel**, not the destructive button. Radix would
+  otherwise focus the first tabbable element, which for a delete dialog is the
+  button that deletes — so Enter on a dialog that appeared unexpectedly would
+  confirm it.
+- `components.json` aliases were repointed from `@/components/ui` to
+  `@/shared/ui`, so the shadcn CLI and the module spec name the same directory.
+  They disagreed before, and the CLI would have scattered components into a
+  second location.
+- **`safeReturnPath` validates rather than sanitises.** `state.from` is
+  attacker-influencable and following it blindly is an open redirect. Anything
+  that is not a plain single-slash absolute path is discarded — `//host`,
+  `/\host`, `/javascript:`, and any scheme. `WEB-AUTH-037` is `P0` and covers
+  ten hostile inputs.
+- One real UX flaw the tests caught: the submit button originally swapped its
+  label for a spinner while pending, which **changes the button's accessible
+  name mid-action**. Busy state is now `aria-busy` plus a spinner beside an
+  unchanged label.
+- The `storage` listener the spec asks for reacts to **removals only**. A
+  rotation also fires that event — every refresh writes a new pair — and
+  treating those as news is how a refresh loop starts. This corrected an
+  overstated comment in `token-store` that had claimed the event was not wanted
+  at all.
+- `@dataroom/tests` gained `react-router`, `react-hook-form`,
+  `@hookform/resolvers` and `@tanstack/react-query`, and `vitest.config.ts`
+  gained the web app's own `@/` alias — written with a trailing slash so it
+  cannot shadow `@web/`.
+
+### 3.17 `nodes` — materialized path, chosen and built
+- **Decided on the user's instruction, 2026-08-17.** `path` is `/id/id/id`,
+  ancestors first, ending in self, over a self-referencing table whose
+  `parent_id` remains the source of truth.
+- **The contract did not change when the strategy was chosen**, which was the
+  whole point of §3.10. `path` appears in exactly two files — `node-path.ts`
+  (the format, pure string functions) and `nodes.repository.ts` (the queries).
+  Nothing else in the codebase can name it.
+- **Six indexes, not the five the spec said**, and the extra one is not padding:
+  a room's `parent_id` is NULL and Postgres treats NULLs as distinct, so the
+  `(parent_id, name)` unique index does not constrain rooms *at all*. Without
+  `(owner_id, name) WHERE parent_id IS NULL`, two rooms can share a name.
+- The two that are easy to write without and are load-bearing:
+  `path text_pattern_ops` (under any non-C collation the planner scans instead
+  of using the index, and every cascade is that query) and
+  `(parent_id, type, name COLLATE "C", id)` matching the cursor's collation
+  exactly.
+- Seven CHECK constraints, so an application bug cannot persist an
+  uninterpretable tree: depth range, room-iff-no-parent, room-is-its-own-root,
+  room-iff-depth-0, only-files-have-bytes, only-files-pending, and path ends in
+  the row's own id.
+- **Three real bugs the property test found**, and it is worth being specific
+  because they are the argument for writing it first:
+  1. The name-conflict retry looped **inside one transaction**. A constraint
+     violation aborts a Postgres transaction, so every later statement fails
+     with "current transaction is aborted" — including the read that finds a
+     free name. Ten concurrent creations of one name produced nine unknown
+     errors rather than nine renames. Each attempt is now its own transaction.
+  2. `isUniqueViolation` missed **`P2010`**. A violation inside `$executeRaw`
+     surfaces as Prisma's "raw query failed" with the real `23505` only in the
+     message, so a name collision during a move read as an unknown server error.
+  3. **Prisma binds JS numbers as `bigint`**, and `substring(text, bigint)` does
+     not exist in Postgres — the move UPDATE failed with `42883 function does
+     not exist`. This is the one to point at: every earlier move test asserted a
+     *rejection*, so the UPDATE had never once executed successfully. A suite of
+     eight passing tests can coexist with a core statement that has never run.
+- Also built: the integration harness (`tests/src/support/`). A **separate
+  `dataroom_test` database**, dropped and recreated per run, and `migrate deploy`
+  rather than `migrate dev` so a test run can never author a migration. Note the
+  port trap written into `global-setup.ts`: compose maps host 5433 → container
+  5432, so anything run via `docker exec` must use 5432, and using 5433 there
+  fails with "connection refused" — which reads as "the database is down".
+- `NodeAncestryService` and `NodeStatsService` were specified and were not built.
+  Each would have needed the repository and nothing else, so both were
+  pass-throughs; their operations are methods on `NodesService`. The path format
+  did earn its own file.
+
 ## 4. Verified facts worth not re-checking
 
 All as of 2026-08-16, verified against the live npm registry / by execution.
@@ -391,7 +478,10 @@ have:
   problem.
 
 - 57 required peer constraints across the five `package.json` files resolve with
-  **zero conflicts**; 68 pinned packages, none reject Node 26.
+  **zero conflicts**; 68 pinned packages, none reject Node 26. (Since then:
+  `@radix-ui/react-dialog` added 24 packages, and `@dataroom/tests` picked up the
+  Nest and React runtime deps it needs to import app source — both with zero
+  peer warnings, but the figure is no longer 68.)
 - `typescript-eslint@8.67.0` peer: `typescript >=4.8.4 <6.1.0`
 - ~~`ts-jest@29.4.12` peer: `typescript >=4.3 <7`~~ — no longer a constraint;
   Jest was removed with the move to `tests/`. Kept struck through because it was

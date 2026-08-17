@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { CommonModule } from './common';
+import { NodesModule } from './nodes';
 import { StorageModule } from './storage';
 import { UsersModule } from './users';
 
@@ -15,6 +16,6 @@ import { UsersModule } from './users';
  * Modules are added bottom-up, in the order in README's build order.
  */
 @Module({
-  imports: [CommonModule, StorageModule, UsersModule],
+  imports: [CommonModule, StorageModule, UsersModule, NodesModule],
 })
 export class AppModule {}

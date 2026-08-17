@@ -12,18 +12,23 @@ private business and nobody else's.
 ## Public surface
 - `NodesService` — create room, create folder, rename, move, soft-delete, list children
 - `NodesRepository` — also satisfies `access`'s `NodeLookupPort`
-- `NodeAncestryService` — `ancestorsOf`, `assertNoCycle`, `assertDepth`, `rebuildSubtree`
 - `NodeNamingService` — conflict detection and resolution
-- `NodeStatsService` — subtree counts and bytes
+- Ancestry, depth, cycle and stats operations are methods on `NodesService` and
+  `NodesRepository` rather than two further services. Splitting them out was
+  specified and did not survive contact: `ancestorsOf`, `assertDepth` and
+  `statsFor` each need the repository and nothing else, so a service in between
+  would have been a pass-through. The path *format* did earn its own file —
+  `node-path.ts`, pure string functions, no database and no Nest.
 
 ## Depends on
 `common`.
 
 ## The contract — what the rest of the system may assume
 
-This is the abstraction other modules compile against. It is complete, and it
-is deliberately free of any column name, so work above L1 can proceed before the
-physical schema is settled.
+This is the abstraction other modules compile against. It is deliberately free
+of any column name — which is why choosing the storage strategy afterwards
+required no change to it, and why the two files that mention `path` are the only
+ones a future change would touch.
 
 ```ts
 type NodeType = 'room' | 'folder' | 'file';
@@ -65,14 +70,33 @@ Three rules make this an abstraction rather than a description:
   then by name, and the keyset cursor is opaque and issued by this module. A
   caller that reconstructs a cursor has taken a dependency on the collation.
 
-## Storage — deferred on purpose
+## Storage — decided: materialized path
 
-The physical schema and its indexes are **not specified yet, and are not
-blocking**. Everything above L1 depends on the contract, not the table.
+**Chosen 2026-08-17.** `path` is `/id/id/id`, ancestors first, ending in self.
+The comparison that led here is kept below.
 
-What is already decided: it is one **self-referencing table** with `parent_id`
-referencing the same table, discriminated by `type`. What is open is how
-ancestry is made queryable.
+Six indexes, not five, and the two that are easy to leave out are the two that
+matter most:
+
+| | Why |
+| --- | --- |
+| `(parent_id, name)` UNIQUE **WHERE deleted_at IS NULL** | Partial, so a soft-deleted node frees its name immediately rather than blocking re-upload for thirty days |
+| `(owner_id, name)` UNIQUE **WHERE parent_id IS NULL AND deleted_at IS NULL** | A room's `parent_id` is NULL and Postgres treats NULLs as distinct, so the index above does not constrain rooms *at all* |
+| `(path text_pattern_ops)` | **Mandatory, not an optimisation.** Under any collation but C, btree ordering does not match `LIKE 'prefix%'` and the planner scans. Every cascade in the system is this query |
+| `(parent_id, type, name COLLATE "C", id)` WHERE live | Matches the listing's `ORDER BY` exactly. A collation mismatch between index and cursor silently skips or duplicates rows at page boundaries, only with non-ASCII names |
+| `(created_at)` WHERE state = 'pending' | The reaper's query |
+| `(deleted_at)` WHERE deleted_at IS NOT NULL | The hard-delete job's query |
+
+Seven CHECK constraints back it up, so an application bug cannot write a tree
+that is impossible to interpret: depth in `[0, 32]`, only a room has no parent, a
+room is its own root and is depth 0, only files carry bytes, only files may be
+`pending`, and `path` ends in the row's own id.
+
+### The comparison that led here
+
+Kept because the reasoning is the useful part, not the conclusion. The table is
+one **self-referencing** relation with `parent_id` pointing at itself; the
+question was only how ancestry is made queryable.
 
 | Strategy | Cost of the read | Cost of the write |
 | --- | --- | --- |
@@ -80,49 +104,66 @@ ancestry is made queryable.
 | Recursive CTE from `parent_id` | one CTE per query, no derived state | moves are a single row update |
 | Closure table | one indexed join | a second table to keep honest |
 
-**The expected choice is the materialized path** — the whole system is
-prefix-shaped (cascade delete, subtree stats, share scoping), and it is what the
-notes throughout this repo already price. Two things must land in the same
-change that picks it, and neither is obvious enough to rediscover:
+The materialized path won because the whole system is prefix-shaped — cascade
+delete, subtree stats and share scoping are all one predicate — and because the
+notes throughout this repo already priced it.
 
-- prefix `LIKE` only uses an index under `text_pattern_ops` or `C` collation;
-- the keyset cursor's collation must match the `ORDER BY` collation exactly.
+**The contract did not change when the strategy was chosen**, which was the
+point of publishing an ancestor list rather than a path string. `path` appears in
+exactly two files: `node-path.ts`, which owns the format, and
+`nodes.repository.ts`, which owns the queries. Nothing else in the codebase can
+name it, so swapping the strategy stays inside this module.
 
-Until then, write `NodeAncestryService` against the contract and let the
-repository be the only file that knows the answer. If the strategy is ever
-swapped, the blast radius is this module — which is the point of doing it this
-way rather than putting `path` in a shared type.
+## Implementation notes
+
+- [x] **The name-conflict retry runs one transaction per attempt.** A constraint
+      violation *aborts* a Postgres transaction, so a retry loop inside one
+      transaction fails on the next statement with "current transaction is
+      aborted" — including the read that would find a free name. The first
+      version did that, and ten concurrent uploads of one name produced nine
+      unknown-request errors instead of nine renames. `API-NODES-006` caught it.
+      A `SAVEPOINT` per attempt would also work; Prisma does not expose one.
+- [x] **`isUniqueViolation` has to recognise `P2010`.** A unique violation raised
+      inside `$executeRaw` surfaces as Prisma's "raw query failed", with the real
+      `23505` only in the message — so a check on `code` alone treats a name
+      collision during a move as an unknown server error.
+- [x] **Prisma binds JS numbers as `bigint`.** `substring(text, bigint)` does not
+      exist in Postgres, so the move UPDATE failed with
+      `42883 function does not exist` — which reads as a typo rather than a type
+      mismatch. Casts are explicit now. This is the line worth pointing at when
+      justifying the property test: every earlier move test was a *rejection*, so
+      the UPDATE had never once executed successfully.
 
 ## Must not depend on
 `storage` (a file row does not know what a bucket is), `access` (authorization
 is decided before this module is called), `auth`.
 
 ## Responsibilities
-- [ ] The `Node` and `Ancestry` contract above, as types the module exports
-- [ ] Physical schema and indexes — **deferred**, see §Storage. Pick the
+- [x] The `Node` and `Ancestry` contract above, as types the module exports
+- [x] Physical schema and indexes — **deferred**, see §Storage. Pick the
       strategy, then write the DDL and the index list in the same change
-- [ ] `NodeAncestryService` — stated against the contract, so every item here
+- [x] `NodeAncestryService` — stated against the contract, so every item here
       survives a change of strategy
-  - [ ] `ancestorsOf(id)` → `Ancestry`, root first, excluding self, with
+  - [x] `ancestorsOf(id)` → `Ancestry`, root first, excluding self, with
         `ancestorsDeleted` computed in the same read
-  - [ ] `assertNoCycle(source, target)`: reject when `target` is `source` or any
+  - [x] `assertNoCycle(source, target)`: reject when `target` is `source` or any
         descendant of it
-  - [ ] `assertDepth`: reject `targetDepth + subtreeHeight > MAX_DEPTH`
-  - [ ] `moveSubtree` — one statement, holding a row lock on the moved node
+  - [x] `assertDepth`: reject `targetDepth + subtreeHeight > MAX_DEPTH`
+  - [x] `moveSubtree` — one statement, holding a row lock on the moved node
         taken **before** its ancestry is read. Under the materialized path that
         is `UPDATE … SET path = replace(path, $old, $new), depth = depth + $delta
         WHERE path LIKE $old || '%'` with a `SELECT … FOR UPDATE` ahead of it
-  - [ ] `deleteSubtree`, `statsFor` — same rule: a method here, never a
+  - [x] `deleteSubtree`, `statsFor` — same rule: a method here, never a
         predicate written by a caller
-  - [ ] `rebuildSubtree` — regenerates all derived ancestry from `parent_id`,
+  - [x] `rebuildSubtree` — regenerates all derived ancestry from `parent_id`,
         exposed as a CLI command. This is the escape hatch if a migration
         corrupts state, and it is only writable because `parent_id` is the
         source of truth
-- [ ] `NodeNamingService`
-  - [ ] Normalize → sanitize → check → resolve
-  - [ ] Retry loop on `23505`, recomputing the suffix, capped at 10 attempts
-- [ ] `NodesService`
-  - [ ] Cascade soft-delete over the whole subtree, in one transaction, emitting
+- [x] `NodeNamingService`
+  - [x] Normalize → sanitize → check → resolve
+  - [x] Retry loop on `23505`, recomputing the suffix, capped at 10 attempts
+- [x] `NodesService`
+  - [x] Cascade soft-delete over the whole subtree, in one transaction, emitting
         `node.deleted` with the subtree id list. **`sharing` owns the listener**
         — this module only emits. (`access` is storage and resolution; the
         use-case that revokes grants sits above it.)
@@ -135,7 +176,7 @@ is decided before this module is called), `auth`.
   - [ ] Breadcrumbs come from `ancestorsOf` in the same response — one read,
         never a second round trip per crumb
 - [ ] `NodeStatsService`
-  - [ ] Live subtree aggregate for delete confirmation
+  - [x] Live subtree aggregate for delete confirmation
   - [ ] Denormalized `subtree_files` / `subtree_bytes` maintained by trigger for
         anything rendered in a list
 

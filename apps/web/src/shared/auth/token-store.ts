@@ -78,17 +78,32 @@ export function clear(): void {
   emit(null);
 }
 
-/**
- * Notifies on changes made **in this tab**.
- *
- * Deliberately not wired to the `storage` event. Cross-tab token changes are
- * handled by the refresh lock re-reading the store rather than by pushing
- * updates around, and a `storage` listener here would race with it — two tabs
- * reacting to each other's writes is how a refresh loop starts.
- */
+/** Notifies on changes made **in this tab**. */
 export function subscribe(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/**
+ * Notifies when *another tab* signs out.
+ *
+ * Only removals. The `storage` event also fires for a rotation — every
+ * successful refresh writes a new pair — and reacting to those is how a refresh
+ * loop starts: two tabs each treating the other's write as news and re-reading,
+ * or worse, re-refreshing. A rotation needs no reaction at all, because the
+ * next request reads the store fresh anyway.
+ *
+ * A sign-out does need one. Otherwise the second tab keeps rendering the app
+ * with a session that no longer exists, until something happens to make it
+ * issue a request.
+ */
+export function subscribeSignOut(listener: () => void): () => void {
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key === STORAGE_KEY && event.newValue === null) listener();
+  };
+
+  globalThis.addEventListener?.('storage', onStorage);
+  return () => globalThis.removeEventListener?.('storage', onStorage);
 }
 
 function emit(pair: TokenPair | null): void {

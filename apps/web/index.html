@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Data Room</title>
+    <!--
+      Referrer-Policy at the document level, not just on the share route.
+      A share credential lives in the URL of /s/:code, and any third-party
+      request from that page would otherwise carry it in the Referer header.
+      Setting it here means no route can forget.
+    -->
+    <meta name="referrer" content="no-referrer" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
