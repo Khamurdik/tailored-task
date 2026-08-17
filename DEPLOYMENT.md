@@ -352,12 +352,13 @@ Tracked here rather than discovered at deploy time.
   `pnpm dev:web` and `pnpm build` both work. What is behind the login is two
   placeholder screens: `explorer`, `uploads`, `viewer`, `sharing` and
   `public-view` are not built.
-- **The API serves `/health` and the five `/auth` routes.** `common`, `storage`,
-  `users`, `nodes`, `access` and `auth` are in — so **login works end to end**.
-  What is missing is a controller for anything node-scoped: the tree and the
-  permission resolver both work and no HTTP route reaches them. `sharing`,
-  `links`, `files` and `jobs` are not built, so there is no sharing and no
-  upload.
+- **The API serves `/health`, five `/auth` routes, nine `/nodes` routes and four
+  share routes.** Everything except `files` and `jobs` is in, so **the product
+  works end to end on the API**: sign in, create a room and folders, issue a
+  link, open it anonymously from a second context, see only that subtree, revoke
+  it and watch it die. What is missing is `files` — nothing can be uploaded, so
+  a data room holds folders and no documents, and every folder reports
+  `subtreeFiles: 0`, correctly, because no file can exist yet.
 - **`users`, `nodes`, `shares` and `refresh_tokens` exist.** Four migrations. `job_runs` lands with `jobs`. The `nodes` storage strategy is decided —
   materialized path, six indexes, seven CHECK constraints — see
   [`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage.

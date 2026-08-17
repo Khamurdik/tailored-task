@@ -65,6 +65,24 @@ encode the bugs.
 | API-NODES-020 | `rebuildSubtree` reconstructs identical paths from `parent_id` alone | integration | P1 |
 | API-NODES-021 | A concurrent move during a read does not observe a half-rewritten path | integration | P1 |
 
+### The HTTP surface
+
+Added when `tree` was built — the module that finally puts the tree behind a
+route. Everything above this heading can be, and was, asserted against
+`NodesService` directly. Nothing below it can: each row is about the request
+pipeline rather than the tree, and each one covers a way the pipeline can be
+wired correctly in every part and still be wrong as a whole.
+
+| ID | Behaviour | Kind | Pri |
+| --- | --- | --- | --- |
+| API-NODES-022 | A stranger requesting a node they cannot read gets a 404 byte-identical to a nonexistent id | security | P0 |
+| API-NODES-023 | Creating a folder under a parent the caller cannot write returns 404 and creates nothing | security | P0 |
+| API-NODES-024 | Moving a node into a destination the caller cannot write returns 404 and moves nothing | security | P0 |
+| API-NODES-025 | A cursor with a broken signature is rejected with 400 rather than silently returning page one | security | P1 |
+| API-NODES-026 | The rooms listing returns only the caller's own rooms | security | P1 |
+| API-NODES-027 | Create room, create folder, rename, delete round-trips over HTTP with breadcrumbs intact | integration | P1 |
+| API-NODES-028 | A page never exceeds `PAGE_SIZE`, and a `limit` above it or a malformed one is refused | integration | P1 |
+
 ## Notes
 - API-NODES-001..004 are one `fast-check` model: keep a simple in-memory tree as
   the model, apply the same ops to both, compare. Four declarations because four
@@ -74,3 +92,12 @@ encode the bugs.
 - API-NODES-020 is the disaster-recovery path. It is worth testing precisely
   because it is the thing you reach for when something else has already gone
   wrong.
+- API-NODES-023 and 024 are the two routes `NodeAccessGuard` **cannot** protect,
+  because each names its node in the request body rather than in the route.
+  They are `P0` for the reason the whole 404-not-403 rule is: both were open
+  before `tree` was written, and neither would have been caught by any test of
+  the guard, which was working perfectly on the routes it could see.
+- API-NODES-022 is `API-ACCESS-011` re-asserted against a real HTTP route. The
+  original is a unit test over the guard; until `tree` existed there was nothing
+  to point a request at, so the byte-identical property had never been observed
+  end to end.

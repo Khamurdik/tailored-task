@@ -79,7 +79,10 @@ describe('grants that must not resolve', () => {
     for (const credential of [revoked.token, expired.token, codec.mintToken()]) {
       // All three indistinguishable at the source, so no caller can accidentally
       // tell them apart. This is the API half of the one-failure-screen decision.
-      await expect(shares.findLiveByCredentialHash(codec.hash(credential))).resolves.toBeNull();
+      // The repository takes the plaintext now, so hashing and the choice of
+      // which unique column to probe are one decision in one place rather than
+      // something each caller re-derives. See `ShareCodec.credentialColumn`.
+      await expect(shares.findLiveByCredential(credential)).resolves.toBeNull();
     }
   });
 });

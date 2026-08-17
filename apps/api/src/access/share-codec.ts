@@ -93,6 +93,25 @@ export class ShareCodec {
   looksLikeShortCode(credential: string): boolean {
     return credential.trim().length === SHORT_CODE_LENGTH;
   }
+
+  /**
+   * Which unique column a presented credential could possibly match.
+   *
+   * **Exactly one, always**, and that is the property worth stating. A 43-char
+   * base64url token can never be a 16-char code and a code can never be a token,
+   * so probing both would mean one of the two index lookups is guaranteed to
+   * miss — `API-LINKS-018` asserts the token case specifically.
+   *
+   * A credential of some *other* length — a malformed guess — resolves to the
+   * token column rather than to nothing. That is deliberate: it must cost the
+   * same as an unknown token, because a request that returns early is
+   * measurably faster and tells an attacker their guess had the wrong shape,
+   * which is a free filter on the search space (`API-LINKS-005`). The rejection
+   * has to come from the lookup missing, not from a length test.
+   */
+  credentialColumn(credential: string): 'tokenHash' | 'shortCodeHash' {
+    return this.looksLikeShortCode(credential) ? 'shortCodeHash' : 'tokenHash';
+  }
 }
 
 export { CROCKFORD, SHORT_CODE_LENGTH };

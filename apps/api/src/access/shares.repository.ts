@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, type Share } from '@prisma/client';
 
 import { PrismaService } from '../common';
+import { ShareCodec } from './share-codec';
 import type { Grant } from './resolve-access';
 
 /**
@@ -12,7 +13,10 @@ import type { Grant } from './resolve-access';
  */
 @Injectable()
 export class SharesRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly codec: ShareCodec,
+  ) {}
 
   /**
    * Every **live** grant on a set of node ids, in **one query regardless of
@@ -51,21 +55,32 @@ export class SharesRepository {
   }
 
   /**
-   * Resolves a hashed credential to a **live** grant.
+   * Resolves a **plaintext** credential to a live grant.
    *
-   * Both columns are unique and indexed, so this is a lookup rather than a scan —
-   * which matters because this is the query an attacker guessing tokens reaches.
-   * Liveness is in the predicate for the same reason as above, and it is also
-   * what makes unknown, revoked and expired indistinguishable to the caller:
-   * all three return null, and the caller has no way to tell them apart even if
-   * it wanted to.
+   * Takes the plaintext rather than a hash so that hashing and the choice of
+   * column are one decision in one place. Every caller — the access resolver and
+   * the anonymous `links` route — reaches the same rule, which matters because
+   * the rule is security-relevant on both counts.
+   *
+   * `ShareCodec.credentialColumn` picks exactly one unique, indexed column, so
+   * this is a single lookup rather than a scan or a double probe — and the query
+   * an attacker guessing tokens reaches is the cheapest one available, on
+   * purpose, because the throttle rather than the query cost is what bounds
+   * them.
+   *
+   * Liveness is in the predicate, which is what makes unknown, revoked and
+   * expired indistinguishable to the caller: all three return null, and the
+   * caller has no way to tell them apart even if it wanted to.
    */
-  async findLiveByCredentialHash(hash: string, now = new Date()): Promise<Share | null> {
+  async findLiveByCredential(credential: string, now = new Date()): Promise<Share | null> {
+    const column = this.codec.credentialColumn(credential);
+    const hash = this.codec.hash(credential);
+
     return this.prisma.share.findFirst({
       where: {
-        OR: [{ tokenHash: hash }, { shortCodeHash: hash }],
+        [column]: hash,
         revokedAt: null,
-        AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
     });
   }

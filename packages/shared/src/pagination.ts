@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { PAGE_SIZE } from './constants.js';
+import { MAX_NAME_LENGTH, PAGE_SIZE } from './constants.js';
 
 /**
  * A cursor is an opaque token, not a structure. Its encoding is `common`'s
@@ -12,7 +12,24 @@ import { PAGE_SIZE } from './constants.js';
  * matters because a mangled cursor is far more often a bug in a caller than an
  * attack.
  */
-export const CursorSchema = z.base64url().max(512);
+/**
+ * The bound is derived rather than picked, because the obvious round number is
+ * too small.
+ *
+ * A cursor carries the sort key, and the sort key contains a **name** — up to
+ * `MAX_NAME_LENGTH` characters, which is 255 *characters* and therefore up to
+ * 1020 bytes once a Cyrillic or CJK name is UTF-8 encoded. Add the type, the
+ * uuid, the JSON punctuation and a 32-byte signature, then base64url the lot,
+ * and the longest legitimate cursor is around 1500 characters.
+ *
+ * The original `512` would have rejected a perfectly valid cursor for any
+ * folder whose 50th child had a long non-ASCII name — pagination failing only
+ * on the second page, only in some folders, only in some languages. Sized off
+ * the constant so it cannot drift if `MAX_NAME_LENGTH` moves.
+ */
+const MAX_CURSOR_LENGTH = Math.ceil(((MAX_NAME_LENGTH * 4 + 96) / 3) * 4);
+
+export const CursorSchema = z.base64url().max(MAX_CURSOR_LENGTH);
 
 export type Cursor = z.infer<typeof CursorSchema>;
 

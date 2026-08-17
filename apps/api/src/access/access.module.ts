@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { NodeAccessGuard } from './node-access.guard';
+import { NodeAccessResolver } from './node-access.resolver';
 import { ShareCodec } from './share-codec';
 import { SharesRepository } from './shares.repository';
 
@@ -12,7 +13,7 @@ import { SharesRepository } from './shares.repository';
  * place allowed to know that `NodesRepository` satisfies it.
  */
 @Module({
-  providers: [SharesRepository, ShareCodec, NodeAccessGuard],
-  exports: [SharesRepository, ShareCodec, NodeAccessGuard],
+  providers: [SharesRepository, ShareCodec, NodeAccessResolver, NodeAccessGuard],
+  exports: [SharesRepository, ShareCodec, NodeAccessResolver, NodeAccessGuard],
 })
 export class AccessModule {}

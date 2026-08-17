@@ -1,7 +1,10 @@
+import type { INestApplication } from '@nestjs/common';
 import { Test, type TestingModule, type TestingModuleBuilder } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 
 import { AppModule } from '@api/app.module';
-import { APP_CONFIG, PrismaService, loadConfig } from '@api/common';
+import { configureApp } from '@api/app.setup';
+import { APP_CONFIG, PrismaService, loadConfig, type AppConfig } from '@api/common';
 import { InMemoryStorageAdapter, STORAGE } from '@api/storage';
 
 /**
@@ -30,6 +33,21 @@ import { InMemoryStorageAdapter, STORAGE } from '@api/storage';
  */
 export interface TestApp {
   module: TestingModule;
+  /**
+   * A real Nest application, configured by the **same** `configureApp` that
+   * `main.ts` calls.
+   *
+   * That shared call is the point. Applying helmet, CORS, the zod pipe and
+   * `ErrorFilter` by hand here would be a second copy of the composition, and
+   * the failure mode is nasty in both directions: forget `ErrorFilter` and every
+   * `AppError` arrives as a 500, so a suite asserting "denial is 404" fails for
+   * a reason unrelated to its subject; copy it faithfully and it keeps passing
+   * after production changes. Same category as this file importing `AppModule`
+   * rather than listing modules.
+   *
+   * Pass `getHttpServer()` to supertest.
+   */
+  http: INestApplication;
   prisma: PrismaService;
   storage: InMemoryStorageAdapter;
   close: () => Promise<void>;
@@ -65,31 +83,88 @@ export interface TestAppOptions {
   override?: (builder: TestingModuleBuilder) => TestingModuleBuilder;
   /** Extra environment, merged over the test defaults. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Disables rate limiting for this app instance.
+   *
+   * The throttle budget is per-IP over a rolling minute, every suite's requests
+   * come from `127.0.0.1`, and the storage lives as long as the module does — so
+   * any suite making more than a handful of requests to a throttled route
+   * eventually fails with 429s that read as permission bugs. Suites that are not
+   * *about* the throttle turn it off; `links/throttle.int.spec.ts` leaves it on
+   * and is the one place it is asserted.
+   *
+   * Implemented by replacing `ThrottlerStorage`, and the two more obvious ways
+   * both silently do nothing:
+   *
+   *   - `overrideGuard(ThrottlerGuard)` finds nothing to replace, because the
+   *     guard is registered under the `APP_GUARD` token rather than as itself;
+   *   - `overrideProvider(APP_GUARD)` misses too — Nest collects enhancer
+   *     providers into `ApplicationConfig` while scanning modules, not through
+   *     the injector the override touches.
+   *
+   * Both leave the real guard running and present as "the option was ignored".
+   * The storage is an ordinary injectable, so replacing it works — and it keeps
+   * the real guard, the real decorators and the real 429 path in the pipeline,
+   * with only the counter neutered.
+   */
+  withoutThrottling?: boolean;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const storage = new InMemoryStorageAdapter();
+  const config = loadConfig({ ...testEnv(), ...options.env });
 
   let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(APP_CONFIG)
-    .useValue(loadConfig({ ...testEnv(), ...options.env }))
+    .useValue(config)
     .overrideProvider(STORAGE)
     .useValue(storage);
+
+  if (options.withoutThrottling === true) {
+    builder = builder.overrideProvider(ThrottlerStorage).useValue(unlimitedThrottlerStorage());
+  }
 
   if (options.override !== undefined) builder = options.override(builder);
 
   const module = await builder.compile();
 
-  await module.init();
+  // `createNestApplication()` rather than `module.init()`: the guards, pipes and
+  // filter only exist on an application object, so a bare module gives a suite
+  // the services without the request pipeline they run behind — which is most of
+  // what an integration test is for.
+  const http = configureApp(module.createNestApplication(), config as AppConfig);
+  await http.init();
+
   const prisma = module.get(PrismaService);
 
   return {
     module,
+    http,
     prisma,
     storage,
     close: async () => {
-      await module.close();
+      await http.close();
     },
+  };
+}
+
+/**
+ * A `ThrottlerStorage` that always reports this request as the first one.
+ *
+ * `totalHits: 1` is below every configured limit, so the guard runs in full and
+ * always allows. Nothing else about the pipeline changes.
+ */
+function unlimitedThrottlerStorage(): ThrottlerStorage {
+  // The record type is declared but not re-exported from the package index, so
+  // the shape is written out rather than imported through a deep path that a
+  // patch release is free to move.
+  return {
+    increment: async () => ({
+      totalHits: 1,
+      timeToExpire: 60,
+      isBlocked: false,
+      timeToBlockExpire: 0,
+    }),
   };
 }
 

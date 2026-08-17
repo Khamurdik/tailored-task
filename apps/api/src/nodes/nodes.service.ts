@@ -2,11 +2,41 @@ import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 
-import { AppError, EventBus, MAX_DEPTH, PrismaService } from '../common';
+import {
+  AppError,
+  CursorService,
+  EventBus,
+  InvalidCursorError,
+  MAX_DEPTH,
+  PAGE_SIZE,
+  PrismaService,
+} from '../common';
 import { isSelfOrDescendant, parseAncestors } from './node-path';
 import { NodeNamingService, isUniqueViolation } from './node-naming.service';
 import { NodesRepository } from './nodes.repository';
 import type { Ancestry, Node, SubtreeStats } from './node.types';
+
+export interface ChildrenPage {
+  items: Node[];
+  /** Opaque and signed. Null on the last page — never an empty string. */
+  nextCursor: string | null;
+  /** Root first, ending in the listed node itself. */
+  breadcrumbs: Node[];
+}
+
+export interface ListChildrenInput {
+  parentId: string;
+  cursor?: string | null;
+  limit?: number;
+  /**
+   * The highest ancestor the caller is allowed to know about, if any.
+   *
+   * A share visitor must not learn the names of the folders **above** the one
+   * they were given — that is the shape of the room around the part that was
+   * actually shared. Passing the grant's node here truncates the trail there.
+   */
+  breadcrumbsStopAt?: string | null;
+}
 
 /**
  * The tree's use-cases.
@@ -24,6 +54,7 @@ export class NodesService {
     private readonly nodes: NodesRepository,
     private readonly naming: NodeNamingService,
     private readonly events: EventBus,
+    private readonly cursors: CursorService,
   ) {}
 
   async findById(id: string): Promise<Node | null> {
@@ -34,20 +65,103 @@ export class NodesService {
     return this.nodes.findAncestry(id);
   }
 
-  /** Ancestors as nodes, root first, self last — what breadcrumbs render from. */
-  async breadcrumbs(id: string): Promise<Node[]> {
+  /** Several nodes in one read. For callers resolving a set of ids to names. */
+  async findManyByIds(ids: readonly string[]): Promise<Node[]> {
+    return this.nodes.findManyByIds(ids);
+  }
+
+  /**
+   * Ancestors as nodes, root first, self last — what breadcrumbs render from.
+   *
+   * **One query for the whole chain**, then ordered in memory. The comment here
+   * used to claim that while the code issued one `findById` per ancestor: eight
+   * round trips at depth eight, parallel but still eight. `findManyByIds` is the
+   * single read the spec asks for.
+   *
+   * `stopAt` truncates the trail to that node and below. It is how a share
+   * visitor sees `Diligence / Q4` without learning that both sit under
+   * `Project Meridian` — see `ListChildrenInput.breadcrumbsStopAt`. An id that
+   * is not on the chain truncates nothing, because a caller naming an unrelated
+   * node is a bug and hiding the whole trail would make it look like a feature.
+   */
+  async breadcrumbs(id: string, stopAt?: string | null): Promise<Node[]> {
     const node = await this.nodes.findById(id);
     if (node === null) return [];
 
     const path = await this.nodes.pathOf(id);
     const ancestorIds = path === null ? [] : parseAncestors(path);
-    if (ancestorIds.length === 0) return [node];
 
-    // One query for the whole chain, then ordered in memory. A query per crumb
-    // is the version that looks fine on a two-level tree and is eight round
-    // trips at depth eight.
-    const ancestors = await Promise.all(ancestorIds.map((each) => this.nodes.findById(each)));
-    return [...ancestors.filter((each): each is Node => each !== null), node];
+    const ancestors = await this.nodes.findManyByIds(ancestorIds);
+    const byId = new Map(ancestors.map((each) => [each.id, each]));
+
+    const trail = [
+      ...ancestorIds
+        .map((ancestorId) => byId.get(ancestorId))
+        .filter((each): each is Node => each !== undefined),
+      node,
+    ];
+
+    if (stopAt === undefined || stopAt === null) return trail;
+
+    const from = trail.findIndex((each) => each.id === stopAt);
+    return from < 0 ? trail : trail.slice(from);
+  }
+
+  /**
+   * One page of children, with the breadcrumb trail in the same response.
+   *
+   * Breadcrumbs ride along because the ancestor chain is read to answer the
+   * query anyway — making the client ask again would be a second round trip for
+   * data already in hand (`API-NODES-018`).
+   *
+   * The cursor is opaque and **signed by `common`**. A caller that hands back
+   * something that does not verify gets a 400 rather than an empty page: an
+   * unsigned cursor would let anyone craft a position and, because the tuple
+   * carries a name, probe whether a given name exists in a folder they can list
+   * but have not paged to.
+   */
+  async listChildren(input: ListChildrenInput): Promise<ChildrenPage> {
+    const limit = Math.min(Math.max(input.limit ?? PAGE_SIZE, 1), PAGE_SIZE);
+
+    let after = null as { type: string; name: string; id: string } | null;
+    if (input.cursor !== undefined && input.cursor !== null && input.cursor !== '') {
+      try {
+        after = this.cursors.decode(input.cursor);
+      } catch (cause) {
+        if (!(cause instanceof InvalidCursorError)) throw cause;
+        throw AppError.validationFailed({ cursor: 'That page position is not valid' });
+      }
+    }
+
+    const rows = await this.nodes.listChildren({ parentId: input.parentId, after, limit });
+
+    // The repository returns `limit + 1` when more exist. The extra row is the
+    // whole reason there is no `count(*)` here — a count over a large folder is
+    // a table scan on every page, to answer a question one spare row answers.
+    const hasMore = rows.length > limit;
+    const items = hasMore ? rows.slice(0, limit) : rows;
+    const last = items.at(-1);
+
+    return {
+      items,
+      nextCursor:
+        hasMore && last !== undefined
+          ? this.cursors.encode({ type: last.type, name: last.name, id: last.id })
+          : null,
+      breadcrumbs: await this.breadcrumbs(input.parentId, input.breadcrumbsStopAt),
+    };
+  }
+
+  /**
+   * The rooms one owner has.
+   *
+   * Deliberately not `listChildren(null)`: a room has no parent, so there is no
+   * node for `NodeAccessGuard` to authorize against and ownership is the only
+   * scope available. Keeping it a separate method keeps that asymmetry visible
+   * instead of hiding it behind a nullable parameter.
+   */
+  async listRooms(ownerId: string): Promise<Node[]> {
+    return this.nodes.listRooms(ownerId);
   }
 
   async createRoom(ownerId: string, name: string): Promise<Node> {

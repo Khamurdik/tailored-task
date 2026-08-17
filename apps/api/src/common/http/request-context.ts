@@ -24,6 +24,22 @@ export interface AccessContext {
   role: Role;
   rootId: string;
   ownerId: string;
+  /**
+   * The node the caller's **share grant** hangs off, or null when the caller is
+   * a signed-in user rather than a share visitor.
+   *
+   * It exists because `rootId` cannot answer the question a controller actually
+   * has to ask. `rootId` is the *room*, so for a visitor holding a token for a
+   * folder four levels down, every ancestor between the room and that folder is
+   * above their reach — and a breadcrumb trail built from `rootId` would name
+   * all four. That is the shape of the owner's room, leaked to someone who was
+   * given one folder (`WEB-PUBLICVIEW-003`).
+   *
+   * Filled in by `NodeAccessGuard` from the grant it already resolved, so it
+   * costs no query. Null for a user actor is correct rather than a gap: an owner
+   * is entitled to their whole trail.
+   */
+  grantNodeId: string | null;
 }
 
 declare module 'express' {

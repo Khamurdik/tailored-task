@@ -45,6 +45,7 @@ record the README deliverable asks for.
 | L1 | [`nodes`](apps/api/src/nodes/TODO.md) | The tree. Rooms, folders, files as one self-referencing table. Ancestry, naming, moves, stats. |
 | L2 | [`auth`](apps/api/src/auth/TODO.md) | Password + Google login, bearer tokens, session guards. Identity only — never authorization. |
 | L2 | [`access`](apps/api/src/access/TODO.md) | Grants storage + permission resolution + route guards. |
+| L3 | [`tree`](apps/api/src/tree/TODO.md) | The tree's HTTP surface. `/nodes/*` behind `@RequireAccess`. Owns no state. |
 | L3 | [`sharing`](apps/api/src/sharing/TODO.md) | Share use-cases: issue links, invite users, revoke, cascade. Owner-only, every route. |
 | L3 | [`links`](apps/api/src/links/TODO.md) | The anonymous edge: resolve a share token or a 16-char short code to a grant. One uniform failure. |
 | L3 | [`files`](apps/api/src/files/TODO.md) | Upload lifecycle orchestration. Binds `nodes` to `storage`. |
@@ -87,14 +88,22 @@ they are implemented. The first run is meant to be red — see
 ```
 packages/shared → tests/registry + gate → tests/contract
        → common → storage → users → nodes → auth → access
-       → sharing → links → files
+       → tree → sharing → links → files
        → web/shared → web/auth → web/explorer → web/uploads
        → web/sharing → web/viewer → web/public-view
        → jobs
 ```
 
-Four things about this order are load-bearing and were got wrong in an earlier
+Five things about this order are load-bearing and were got wrong in an earlier
 revision of it:
+
+- **`tree` comes before `sharing`.** An earlier revision put the tree's
+  controller after both L3 sharing modules, on the grounds that they would give
+  `NodeAccessGuard` its first routes. They cannot give it a *readable* one:
+  every route in `sharing` is `@RequireAccess('own')`, which a share token can
+  never satisfy, so `API-SHARING-002` — "a token for folder B requesting sibling
+  C returns 404", the test a reviewer tries by hand — has nothing to point at
+  until `GET /nodes/:id` exists.
 
 - **The contract and the coverage gate come first.** `common` re-exports
   constants `packages/shared` owns, and a gate written after the suites exist

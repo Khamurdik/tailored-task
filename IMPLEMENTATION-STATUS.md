@@ -19,9 +19,14 @@ specification-only to a booting API and a working login screen.*
 
 ## 1. State in one table
 
-**556 declared tests · 156 implemented · 36 of 83 `P0`.** Lint clean in all four
+**566 declared tests · 210 implemented · 59 of 89 `P0`.** Lint clean in all four
 packages, `pnpm -r typecheck` clean, `pnpm build` succeeds, the API boots and
 serves, the web app builds and signs a user in.
+
+*Updated after the session that built `tree`, `sharing` and `links`. **The
+product now works end to end on the API**: an owner creates a room and folders,
+issues a link, a stranger opens it with no account, sees only that subtree, and
+the link dies the moment it is revoked.*
 
 | Module | Layer | State |
 | --- | --- | --- |
@@ -30,10 +35,11 @@ serves, the web app builds and signs a user in.
 | `storage` | L1 | **Done** offline. S3 adapter never run against a real bucket |
 | `users` | L1 | **Done.** Repository, service, seeder, `users` table |
 | `nodes` | L1 | **Done, no controller.** Materialized path, property test green |
-| `access` | L2 | **Done, no controller.** Pure resolver, guard, codec, `shares` |
+| `access` | L2 | **Done.** Pure resolver, guard, **resolver service**, codec, `shares` |
 | `auth` | L2 | **Done.** 5 routes, refresh rotation, Google linking |
-| `sharing` | L3 | Not started |
-| `links` | L3 | Not started |
+| `tree` | L3 | **Done.** 9 `/nodes/*` routes behind `SessionGuard` + `NodeAccessGuard` |
+| `sharing` | L3 | **Done.** Issue, list with inheritance, revoke, cascade, login-time claiming |
+| `links` | L3 | **Done.** Anonymous resolve, uniform 404, throttle, no-store |
 | `files` | L3 | Not started |
 | `search` | L3 | **Deferred, out of scope** |
 | `audit` | L4 | **Deferred, out of scope** |
@@ -51,28 +57,55 @@ Four migrations applied: `init_users`, `add_nodes`, `add_shares`,
 ```
 suites/api/access         18/  20    suites/web/shared         44/  44
 suites/api/auth           18/  28    suites/web/auth           35/  49
-suites/api/common         11/  17    suites/contract           12/  12
-suites/api/nodes           8/  21    suites/api/storage        10/  13
-suites/api/{files,jobs,links,sharing,users,search}   0
+suites/api/common         12/  18    suites/contract           12/  12
+suites/api/nodes          19/  28    suites/api/storage        10/  13
+suites/api/sharing        20/  20    suites/api/links          21/  23
+suites/api/{files,jobs,users,search}   0
 suites/web/{explorer,public-view,sharing,uploads,viewer}   0
 suites/journeys            0/  39
 ```
+
+`api/sharing` is complete. `api/links` is 21/23: `API-LINKS-023` is `P2` and
+deliberately unimplemented — getting it right means the throttle returns 404
+rather than 429, which removes a genuinely useful signal from legitimate
+clients, and the row exists to make that trade visible rather than to be taken.
+
+Ten declarations were added across three sessions. None is padding: seven cover
+the request pipeline, which could not be asserted before a route existed; two
+cover leaks found while building (`API-SHARING-020`, `API-SHARING-021`); one
+covers a contract violation that had shipped because nothing had ever produced a
+cursor.
 
 ---
 
 ## 2. The single most important gap
 
-**No HTTP route is node-scoped yet.** The tree works, the permission resolver
-works, login works — and `NodeAccessGuard` **has never run in a real request.**
-It is unit-tested and integration-tested through its collaborators, but no
-controller carries `@RequireAccess()`.
+~~**No HTTP route is node-scoped yet.**~~ **Closed.** `tree` gives
+`NodeAccessGuard` nine routes, and `API-NODES-022` asserts the byte-identical
+404 against a real request rather than against the guard in isolation.
 
-That is the next thing to close, and it is why `sharing` + `links` are the right
-next step rather than `explorer`: they give the guard its first controllers and
-complete the path credential → grant → node.
+Closing it found two ways the guard could be perfectly correct and the system
+still wrong, both now `P0` declarations:
 
-The 10 `P0`s in `api/links` are the largest single block of unimplemented
-security tests in the repo.
+- **`POST /nodes/folders` names its parent in the request body**, so the guard —
+  which reads route parameters — never fired for it. Any authenticated caller
+  could create a folder in anybody's room.
+- **`PATCH /nodes/:id/parent` names its destination in the body.** The guard
+  authorized the node being *moved* and said nothing about where it landed, so a
+  node could be moved into a room the caller has no access to.
+
+Both are closed by calling `NodeAccessResolver` — the same method the guard
+calls, extracted for exactly this — rather than by a second hand-written check.
+
+~~**The gap now is `sharing` + `links`.**~~ **Also closed.** Both are built and
+all 41 declarations pass, including every one of the 16 `P0`s. `API-SHARING-002`
+— "a token for folder B requesting sibling C returns 404", the test a reviewer
+tries by hand — is green, along with `API-LINKS-004`, the single comparison that
+would catch the indistinguishability design failing.
+
+**The gap now is `files`.** Nothing can be uploaded, so a data room holds
+folders and no documents. It also owns the rollup maintenance the listing
+already depends on — see *Still genuinely open*.
 
 ---
 
@@ -122,6 +155,9 @@ Every one of these cost time. They are also in `HANDOFF.md` §4.
 | **`@node-rs/argon2` exports `Algorithm` as an ambient const enum** | `TS2748` under `isolatedModules`, and inlined by a compiler that does not exist during type stripping. argon2id is the default — do not pass the option |
 | **Vitest does not read tsconfig `paths`** | Aliases are repeated in `tests/vitest.config.ts`. `@/` has a trailing slash so it cannot shadow `@web/` |
 | **Vitest 4 removed the `basic` reporter** | Use `dot` or the default |
+| **Rate limiting cannot be switched off with `overrideGuard` or `overrideProvider`** | `ThrottlerGuard` is registered under `APP_GUARD`, and Nest collects enhancer providers into `ApplicationConfig` at scan time — both overrides silently no-op and the suite fails with 429s that read as permission bugs. Replace `ThrottlerStorage` instead: `createTestApp({ withoutThrottling: true })` |
+| **Concurrent supertest calls on one server race** | `request(server)` calls `listen()` on the server it is handed, so a `Promise.all` of requests dies with `ECONNRESET`/`ECONNREFUSED`. Drive them sequentially |
+| **Any `WORD-123` in a test title is read as a declaration id** | "…a SHA-256 of the token…" registered as an implementation of a test called `SHA-256`. The gate reports it as "implemented but never declared" rather than miscounting, so it is loud — but do not spell digests that way in a title |
 | **`consistent-type-imports` is off in `apps/api`** | `--fix` would erase the `design:paramtypes` metadata Nest DI needs, turning a lint tidy-up into a boot failure |
 | **`moduleResolution: node10` errors on TS 6** | `TS5107`. `apps/api` acknowledges it with `ignoreDeprecations` (node10 is load-bearing for the strip-safe zone); `packages/shared` moved to `node16` |
 
@@ -145,6 +181,55 @@ code that eight other passing tests never exercised:
    test asserted a *rejection*, so the `bigint`/`substring` type error was
    invisible. **Eight green tests can coexist with a core statement that has
    never run.**
+
+**Found by building `tree` — four, and every one lived in code that had never
+executed.** The pattern from the property test repeats exactly: a suite can be
+green while a core statement has never run.
+
+1. **Every cursor this system produced was invalid under its own contract.**
+   `encodeCursor` emitted `base64url(payload).base64url(hmac)`; `CursorSchema` is
+   `z.base64url()`, and `.` is not in that alphabet. A client parsing the
+   response would have rejected the page it had just been handed. `API-COMMON-010`
+   round-trips the encoder against the decoder, and two functions that agree with
+   each other can both disagree with the schema. The signature is now appended as
+   raw bytes and the whole thing encoded once — one base64url token, which is
+   what the contract always said a cursor was. `API-COMMON-018` pins it.
+2. **`CursorSchema`'s 512-character bound was too small for a legitimate cursor.**
+   A cursor carries a name, names run to 255 *characters*, and a Cyrillic or CJK
+   name at the cap is ~1020 bytes — so the cursor is ~1500 characters. Pagination
+   would have failed on page two, only in some folders, only in some languages.
+   The bound is now derived from `MAX_NAME_LENGTH` rather than picked.
+3. **`ORDER BY "type"` sorted by the wrong column.** The listing selects
+   `"type"::text AS "type"`, and Postgres resolves an unqualified `ORDER BY` name
+   against the **output** columns first — so it sorted the text label and put
+   files before folders alphabetically, reversing the rule the enum's declaration
+   order exists to provide. Qualified as `"nodes"."type"` now.
+4. **`listSubtree` returned `undefined` for every `@map`ped field.** It was
+   `SELECT *` through `$queryRaw`, which yields the *database's* column names, so
+   `root_id` never became `rootId`. Invisible because its only caller reads
+   `depth`, which is spelled the same either way — and it would have become a
+   silent wrong answer for whoever read the second field.
+
+**Found by building `sharing` and `links` — three, all in the seam between
+modules rather than inside one:**
+
+1. **Breadcrumbs named every folder above a share.** `NodeAccessGuard` resolved a
+   visitor's *role* perfectly and had nothing to say about what a response may
+   contain, so the trail was built from the room root: a visitor given
+   `Q4` saw `Project Meridian / Diligence / Q4`, which is the shape of the
+   owner's room handed to a stranger. `AccessContext.grantNodeId` carries the
+   answer now, read out of the grant the guard had already resolved, so it costs
+   no query. `API-SHARING-021`.
+2. **`@RequireAuth()` on the sharing controllers answered 401 where the system
+   answers 404.** A share visitor attempting to re-share learned that the route
+   existed and their credential was the wrong kind — a different answer than the
+   one a signed-in stranger gets, and therefore a way to tell two situations
+   apart that everything else is careful to keep identical. `@RequireAccess('own')`
+   already excluded them, through the single 404.
+3. **`CreatedShareSchema.token` could not describe a `user` grant.** It was
+   `z.string()`, the database forbids a token on a user grant
+   (`shares_kind_shape`), and the placeholder data layer returned `''` to bridge
+   the gap. An empty string is not a token.
 
 **Other real defects, all fixed:**
 
@@ -221,15 +306,15 @@ the thing it names.
 
 In order. Each step's declarations are already written.
 
-1. **`sharing` + `links` (L3).** Gives `NodeAccessGuard` its first controllers
-   and closes credential → grant → node. 41 declarations, 16 of them `P0`,
-   including the whole `api/links` indistinguishability group. `access` already
-   provides everything both need — `SharesRepository`, `ShareCodec`,
-   `findLiveByCredentialHash`, `bindPendingToUser`.
-2. **A `nodes` controller.** List children, detail, create, rename, move,
-   delete, stats — all behind `@RequireAccess()`. Unblocks `web/explorer`
-   against the real API.
-3. **`files` (L3).** Upload lifecycle. `storage` is done and waiting.
+1. ~~**A `nodes` controller.**~~ **Done — it is `tree`.** It moved ahead of
+   `sharing` because `sharing`'s scoping tests need a *readable* node route and
+   every route `sharing` exposes is `@RequireAccess('own')`, which a share token
+   can never satisfy.
+2. ~~**`sharing` + `links` (L3).**~~ **Done.** 41 declarations, all green,
+   including all 16 `P0`s.
+3. **`files` (L3).** Upload lifecycle — the next real gap. `storage` is done and
+   waiting, and every route it needs a guard for now has a working one. It also
+   owns the rollup maintenance the listing already depends on — see below.
 4. **`web/explorer`.** 80 declarations. Can be built against the mock
    (`VITE_API_MODE=mock`) or the real API; the mock already implements the tree,
    pagination, conflicts and share scoping.
@@ -247,6 +332,17 @@ In order. Each step's declarations are already written.
   adapter is written and exercised only through its in-memory twin.
 
 ### Still genuinely open
+
+- **`subtree_files` / `subtree_bytes` are served and unmaintained.** The children
+  listing returns both columns because `NodeSummarySchema` declares them, and
+  nothing writes them — they default to 0. That is *honest* today, since no file
+  can exist until `files` lands, and becomes a lie the same day it does.
+  `API-FILES-016` declares the maintenance; do not ship `files` without it.
+- **~64 declarations are unwritten tests against modules already marked Done** —
+  `api/users` alone has 16 with 4 `P0` for a module that has been finished since
+  the first session. The `implemented / declared` ratio reads as "a third of the
+  product", and a meaningful slice of the gap is coverage rather than features.
+  Cheap, and it is the fastest `P0` movement available.
 
 - **The boundaries lint rule.** The L0–L4 graph is the most-repeated claim in
   this repository and the only one nothing checks. Four static tests in

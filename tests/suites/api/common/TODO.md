@@ -34,6 +34,7 @@ it is in the wrong folder.
 | --- | --- | --- | --- |
 | API-COMMON-010 | A cursor round-trips to the same `(type, name, id)` tuple | unit | P1 |
 | API-COMMON-011 | A tampered cursor is rejected rather than decoded to garbage | security | P0 |
+| API-COMMON-018 | An emitted cursor satisfies `CursorSchema`, including for a name at the 255-char cap | unit | P0 |
 
 ### Configuration and boot
 
@@ -52,6 +53,17 @@ it is in the wrong folder.
 | API-COMMON-017 | No error response body contains a raw Postgres string | security | P1 |
 
 ## Notes
+- API-COMMON-018 was added after the fact, which is the interesting part. The
+  encoder emitted `base64url(payload).base64url(hmac)` and `CursorSchema` is
+  `z.base64url()` — a `.` is not in that alphabet, so **every cursor this system
+  produced was invalid under its own published contract**, and a client parsing
+  the response would have rejected the page it had just been handed. Nothing
+  caught it because nothing had ever produced a cursor: `API-COMMON-010`
+  round-trips the encoder against the decoder, and two functions that agree with
+  each other can both disagree with the schema. The declaration is `P0` because
+  the failure is silent at the layer that would notice — pagination simply stops
+  working on page two. It also pins the length bound, which was 512 and needed
+  to be ~1500 for a Cyrillic name at the cap.
 - API-COMMON-014 is worth an explicit query spy, not an eyeball. The reason the
   rule exists (Neon never scales to zero, free tier burns out in ~2 weeks) is
   invisible in any local test, so only the assertion protects it.

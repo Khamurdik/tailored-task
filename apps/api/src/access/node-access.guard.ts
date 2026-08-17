@@ -1,7 +1,6 @@
 import {
   CanActivate,
   ExecutionContext,
-  Inject,
   Injectable,
   SetMetadata,
   type CustomDecorator,
@@ -9,12 +8,9 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
-import { AppError, type RequestActor } from '../common';
-import { NODE_LOOKUP, type NodeLookupPort } from './ports/node-lookup.port';
-import { resolveAccess, type Actor } from './resolve-access';
-import { ShareCodec } from './share-codec';
-import { SharesRepository } from './shares.repository';
-import { satisfies, type Verb } from './role';
+import { AppError } from '../common';
+import { NodeAccessResolver } from './node-access.resolver';
+import { type Verb } from './role';
 
 export const REQUIRE_ACCESS = 'access:verb';
 
@@ -23,13 +19,20 @@ export function RequireAccess(verb: Verb): CustomDecorator<string> {
   return SetMetadata(REQUIRE_ACCESS, verb);
 }
 
+/**
+ * The HTTP adapter over `NodeAccessResolver`.
+ *
+ * All this does is find the node id in the route, ask the resolver, and turn a
+ * `null` into a 404. The decision itself lives in the resolver because two
+ * operations name a node in the request **body** — folder creation names its
+ * parent, a move names its destination — and a guard cannot see those. One
+ * implementation, two callers; see the resolver's own comment.
+ */
 @Injectable()
 export class NodeAccessGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    @Inject(NODE_LOOKUP) private readonly nodes: NodeLookupPort,
-    private readonly shares: SharesRepository,
-    private readonly codec: ShareCodec,
+    private readonly access: NodeAccessResolver,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -44,7 +47,6 @@ export class NodeAccessGuard implements CanActivate {
     if (verb === undefined) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
-    const nodeId = this.nodeIdFrom(request);
 
     /**
      * **Every failure below is the same 404.**
@@ -56,45 +58,15 @@ export class NodeAccessGuard implements CanActivate {
      * quietly. `API-ACCESS-011` asserts they are byte-identical, which is only
      * achievable because there is a single `throw` site.
      */
-    if (nodeId === null) throw AppError.notFound();
-
-    const snapshot = await this.nodes.findSnapshot(nodeId);
-    if (snapshot === null) throw AppError.notFound();
-
-    // Self and every ancestor, in one query. Depth costs nothing here: the
-    // ancestor ids were already known before any grant was fetched.
-    const grants = await this.shares.liveGrantsFor([...snapshot.ancestorIds, snapshot.id]);
-    const actor = await this.toResolverActor(request.actor ?? null);
-    const role = resolveAccess({ actor, node: snapshot, grants });
-
-    if (!satisfies(role, verb)) throw AppError.notFound();
-
-    request.access = {
-      nodeId: snapshot.id,
-      role,
-      rootId: snapshot.rootId,
-      ownerId: snapshot.ownerId,
-    };
-    return true;
-  }
-
-  /**
-   * Turns the raw credential `auth` attached into the grant id the resolver
-   * needs.
-   *
-   * This translation is the boundary in action: `auth` says "someone presented
-   * this string", and `access` — the only module that may read `shares` — says
-   * which grant that is. An unresolvable credential becomes `null`, so unknown,
-   * revoked and expired are indistinguishable here too.
-   */
-  private async toResolverActor(actor: RequestActor): Promise<Actor> {
-    if (actor === null) return null;
-    if ('userId' in actor) return { userId: actor.userId };
-
-    const share = await this.shares.findLiveByCredentialHash(
-      this.codec.hash(actor.shareToken),
+    const resolved = await this.access.resolve(
+      request.actor ?? null,
+      this.nodeIdFrom(request),
+      verb,
     );
-    return share === null ? null : { shareId: share.id };
+    if (resolved === null) throw AppError.notFound();
+
+    request.access = resolved;
+    return true;
   }
 
   /**

@@ -32,7 +32,7 @@ except where noted, and never from above.
 ```
 L4   jobs          audit
      ──────────────────────────────────────────
-L3   sharing       links        files        search
+L3   tree          sharing      links        files        search
      ──────────────────────────────────────────
 L2   auth          access
      ──────────────────────────────────────────
@@ -54,7 +54,11 @@ L0   common
   `sharing` is `nodes` + `access`. `links` is the anonymous half of `sharing`,
   split out so that "every route in `sharing` requires an owner" is a property
   a test can assert instead of a convention someone maintains. Controllers
-  mostly live here.
+  mostly live here — `tree` is the case that makes "mostly" into "always": the
+  tree's own routes need `@RequireAccess`, which is L2, so they cannot live in
+  `nodes`, which is L1 and is specified never to depend on `access`. Every
+  node-scoped route in the system belongs to the L3 module that owns what it
+  returns, and `tree` is that rule applied to the tree itself.
 - **L4** — reactive and scheduled work. Nothing depends on these; they depend
   on everything.
 

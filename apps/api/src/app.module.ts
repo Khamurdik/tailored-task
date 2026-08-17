@@ -5,8 +5,11 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AccessModule, NODE_LOOKUP } from './access';
 import { AuthModule } from './auth';
 import { CommonModule } from './common';
+import { LinksModule } from './links';
 import { NodesModule, NodesRepository } from './nodes';
+import { SharingModule } from './sharing';
 import { StorageModule } from './storage';
+import { TreeModule } from './tree';
 import { UsersModule } from './users';
 
 /**
@@ -75,6 +78,9 @@ class NodeLookupBindingModule {}
     NodeLookupBindingModule,
     AccessModule,
     AuthModule,
+    TreeModule,
+    SharingModule,
+    LinksModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -127,6 +127,14 @@ name it, so swapping the strategy stays inside this module.
       inside `$executeRaw` surfaces as Prisma's "raw query failed", with the real
       `23505` only in the message — so a check on `code` alone treats a name
       collision during a move as an unknown server error.
+- [x] **A bare `ORDER BY "type"` sorted by the wrong thing.** The listing selects
+      `"type"::text AS "type"` so the enum arrives as a string, and Postgres
+      resolves an unqualified `ORDER BY` name against the **output** columns
+      first — so it sorted by the text label and put `'file'` before `'folder'`
+      alphabetically, which is the exact reverse of the enum order the whole
+      folders-before-files rule rests on. Qualified as `"nodes"."type"` now; a
+      qualified reference can only mean the input column. Caught by
+      `API-NODES-015` on its first run.
 - [x] **Prisma binds JS numbers as `bigint`.** `substring(text, bigint)` does not
       exist in Postgres, so the move UPDATE failed with
       `42883 function does not exist` — which reads as a typo rather than a type
@@ -171,14 +179,21 @@ is decided before this module is called), `auth`.
         puts every descendant id in one payload. Accepted for now; the fix when
         it hurts is to name the subtree by its root id and let the listener ask
         this module for the members
-  - [ ] Listing: keyset paginated, folders before files,
-        `ORDER BY type, name COLLATE "C", id`
-  - [ ] Breadcrumbs come from `ancestorsOf` in the same response — one read,
-        never a second round trip per crumb
+  - [x] Listing: keyset paginated, folders before files,
+        `ORDER BY type, name COLLATE "C", id`. Raw SQL, because neither the
+        collation nor the row-constructor keyset is expressible through Prisma's
+        `orderBy` — and the collation is the whole point, not a preference
+  - [x] Breadcrumbs come from `ancestorsOf` in the same response — one read,
+        never a second round trip per crumb. The first version claimed this in a
+        comment while issuing one `findById` per ancestor; `findManyByIds` is
+        the read the comment described
 - [ ] `NodeStatsService`
   - [x] Live subtree aggregate for delete confirmation
   - [ ] Denormalized `subtree_files` / `subtree_bytes` maintained by trigger for
-        anything rendered in a list
+        anything rendered in a list. **Still open, and now visible**: the
+        listing serves these columns and nothing maintains them, so every folder
+        reports 0. Honest while no file can exist; a lie the moment `files`
+        lands, which is why `API-FILES-016` declares the maintenance
 
 ## Invariants
 Invariants 1–6 in `docs/ARCHITECTURE.md` are this module's responsibility.

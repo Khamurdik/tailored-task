@@ -29,7 +29,7 @@ The scoping test here is the one a reviewer will try by hand.
 | API-SHARING-010 | A grant for an email with no user row stays pending | integration | P1 |
 | API-SHARING-011 | RETIRED — binding via a `user.created` event. The seeder is a separate process from the API, so an in-process event could never reach the listener; login is the only trigger. Kept so the number is never reused. See HANDOFF.md §3.13 | integration | P1 |
 | API-SHARING-012 | Inserting that user with raw SQL then logging in binds the grant, with no event involved | integration | P0 |
-| API-SHARING-013 | Claiming is idempotent — logging in twice binds the grant once and does not duplicate it | unit | P1 |
+| API-SHARING-013 | Claiming is idempotent — logging in twice binds the grant once and does not duplicate it | integration | P1 |
 
 ### Listing, moves, and expiry
 
@@ -41,6 +41,8 @@ The scoping test here is the one a reviewer will try by hand.
 | API-SHARING-017 | A direct grant on a node survives a move | integration | P1 |
 | API-SHARING-018 | A share token is 32 CSPRNG bytes and two links never collide | security | P1 |
 | API-SHARING-019 | An expired share resolves to 404 | integration | P1 |
+| API-SHARING-020 | Every route this module exposes refuses an anonymous caller, with no carve-out | security | P0 |
+| API-SHARING-021 | A share visitor's breadcrumbs stop at the shared node and never name an ancestor above it | security | P0 |
 
 ## Notes
 - API-SHARING-015..017 are the move-semantics decision from the module TODO.
@@ -48,6 +50,21 @@ The scoping test here is the one a reviewer will try by hand.
   a test is the only durable record of which surprise was chosen.
 - API-SHARING-012 is the one that would not exist if the design had kept a
   registration endpoint. It exists because operators insert users by hand.
+- API-SHARING-020 is the module's central claim — "owner-only, every route" —
+  turned into an assertion. It is only writable with **no carve-out list**
+  because the anonymous half lives in `links`, which is the entire reason that
+  module was split out. A test that had to exempt one route would be documenting
+  the hazard rather than closing it.
+- API-SHARING-021 was added while implementing. `NodeAccessGuard` resolves a
+  visitor's role correctly and says nothing about what a *response* may contain,
+  so breadcrumbs were built from the room root and named every folder between it
+  and the shared one. Nothing in the permission model was wrong; the leak was in
+  the presentation. `AccessContext.grantNodeId` carries the answer now, read out
+  of the grant the guard had already resolved.
+- API-SHARING-013 is declared `integration` rather than `unit`. Claiming runs
+  against a real `shares` table through an event fired by a real login, and the
+  file-naming rule in `tests/TODO.md` §1 makes `.unit.spec.ts` mean "no I/O" —
+  so a unit label here would have put it in the wrong project.
 - API-SHARING-011 is retired rather than deleted, per the format rules. It
   declared the `user.created` fast path, which was removed when it turned out
   the seeder runs in its own process and the bus is in the API's — see

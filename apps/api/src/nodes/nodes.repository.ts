@@ -12,6 +12,56 @@ import {
 import type { Ancestry, Node, NodeSnapshot, SubtreeStats } from './node.types';
 
 /**
+ * The sort position of one row, in the listing's exact order.
+ *
+ * The tuple *is* the cursor payload — `common`'s `CursorService` signs these
+ * three fields and nothing else. Keeping the shape here rather than importing
+ * the cursor type keeps the repository ignorant of how a position is encoded.
+ */
+export interface ChildPosition {
+  type: string;
+  name: string;
+  id: string;
+}
+
+/**
+ * Explicit columns, aliased to the names `toDomain` reads.
+ *
+ * `SELECT *` is wrong in a raw query here and silently so: `$queryRaw` returns
+ * the **database's** column names, so `root_id` never becomes `rootId` the way
+ * it does through the model API, and every mapped field arrives as `undefined`.
+ * `listSubtree` had exactly that bug and got away with it because its only
+ * caller reads `depth`, which is spelled the same either way.
+ *
+ * The two enum casts are deliberate: `::text` guarantees a string rather than
+ * whatever the driver decides a custom enum OID decodes to.
+ *
+ * **Every `ORDER BY` over this list must qualify its columns** — `"nodes"."type"`,
+ * not `"type"`. Postgres resolves a bare `ORDER BY` name against the *output*
+ * columns first, so with `"type"::text AS "type"` in scope it sorts by the text
+ * label and `'file'` lands before `'folder'` alphabetically — the exact reverse
+ * of the enum order the whole folders-before-files rule depends on. A qualified
+ * reference can only mean the input column.
+ */
+const NODE_COLUMNS = Prisma.sql`
+  "id",
+  "type"::text AS "type",
+  "state"::text AS "state",
+  "root_id" AS "rootId",
+  "parent_id" AS "parentId",
+  "owner_id" AS "ownerId",
+  "name",
+  "depth",
+  "size_bytes" AS "sizeBytes",
+  "content_type" AS "contentType",
+  "subtree_files" AS "subtreeFiles",
+  "subtree_bytes" AS "subtreeBytes",
+  "deleted_at" AS "deletedAt",
+  "created_at" AS "createdAt",
+  "updated_at" AS "updatedAt"
+`;
+
+/**
  * The only code that reads or writes the `nodes` table, and the only code that
  * knows a `path` column exists.
  *
@@ -75,6 +125,91 @@ export class NodesRepository {
       deletedAt: row.deletedAt,
       ancestorsDeleted,
     };
+  }
+
+  /**
+   * One page of live children, in the listing's order: **folders before files,
+   * then by name, then by id.**
+   *
+   * ## Why this is raw SQL
+   *
+   * `ORDER BY "name" COLLATE "C"` is not expressible through Prisma's `orderBy`,
+   * and the collation is not a preference — index `nodes_children_listing` is
+   * declared `("parent_id", "type", "name" COLLATE "C", "id") WHERE deleted_at
+   * IS NULL`, and a keyset cursor that compares under a *different* collation
+   * than the index orders by silently skips or duplicates rows at page
+   * boundaries. It is invisible with ASCII names, which is exactly how it ships.
+   * This query matches that index term for term.
+   *
+   * Folders-before-files is free: `node_type` is declared
+   * `('room', 'folder', 'file')`, and a Postgres enum sorts in declaration
+   * order. That ordering is load-bearing rather than cosmetic, which is why the
+   * enum is not alphabetical.
+   *
+   * The row-constructor comparison is what makes this a keyset rather than an
+   * offset — the planner turns `(a, b, c) > (x, y, z)` into an index seek, so
+   * page 400 costs what page 1 costs and a row inserted mid-paging cannot shift
+   * the window.
+   *
+   * Returns up to `limit + 1` rows; the caller uses the extra one to decide
+   * whether there is a next page without a second `count(*)`.
+   */
+  async listChildren(
+    input: { parentId: string; after: ChildPosition | null; limit: number },
+    tx?: Prisma.TransactionClient,
+  ): Promise<Node[]> {
+    const keyset =
+      input.after === null
+        ? Prisma.empty
+        : Prisma.sql`AND ("type", "name" COLLATE "C", "id")
+                   > (${input.after.type}::"node_type", ${input.after.name} COLLATE "C", ${input.after.id}::uuid)`;
+
+    const rows = await this.client(tx).$queryRaw<PrismaNode[]>(Prisma.sql`
+      SELECT ${NODE_COLUMNS}
+        FROM "nodes"
+       WHERE "parent_id" = ${input.parentId}::uuid
+         AND "deleted_at" IS NULL
+         ${keyset}
+       ORDER BY "nodes"."type", "nodes"."name" COLLATE "C", "nodes"."id"
+       LIMIT ${input.limit + 1}::int
+    `);
+
+    return rows.map(toDomain);
+  }
+
+  /**
+   * The rooms an owner has, in the same order children are listed in.
+   *
+   * A room's parent is NULL, so it cannot come out of `listChildren` — Postgres
+   * treats NULLs as distinct and `parent_id = NULL` matches nothing. Rooms are
+   * scoped by owner instead, which is also the only scoping that makes sense:
+   * a room has no parent to be authorized against, so this is the one listing
+   * `NodeAccessGuard` cannot guard and ownership is checked directly.
+   */
+  async listRooms(ownerId: string, tx?: Prisma.TransactionClient): Promise<Node[]> {
+    const rows = await this.client(tx).$queryRaw<PrismaNode[]>(Prisma.sql`
+      SELECT ${NODE_COLUMNS}
+        FROM "nodes"
+       WHERE "owner_id" = ${ownerId}::uuid
+         AND "parent_id" IS NULL
+         AND "deleted_at" IS NULL
+       ORDER BY "nodes"."type", "nodes"."name" COLLATE "C", "nodes"."id"
+    `);
+
+    return rows.map(toDomain);
+  }
+
+  /**
+   * Several nodes by id, in **one** query.
+   *
+   * Exists so breadcrumbs are one round trip rather than one per crumb. The
+   * caller reorders; the database has no opinion about ancestor order and
+   * asking it to impose one would mean sending the chain twice.
+   */
+  async findManyByIds(ids: readonly string[], tx?: Prisma.TransactionClient): Promise<Node[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.client(tx).node.findMany({ where: { id: { in: [...ids] } } });
+    return rows.map(toDomain);
   }
 
   async liveSiblingNames(
@@ -290,12 +425,20 @@ export class NodesRepository {
     return rows.length;
   }
 
-  /** Descendants of a node, live only, for the property test and for stats checks. */
+  /**
+   * Descendants of a node, live only, for the property test and for stats checks.
+   *
+   * The column list is explicit for the reason given on `NODE_COLUMNS`: this
+   * was `SELECT *`, and every `@map`ped field — `rootId`, `parentId`,
+   * `sizeBytes` — came back `undefined`. It went unnoticed because the only
+   * caller reads `depth`, which is spelled the same in both worlds. Fixed here
+   * rather than left for whoever reads the second field.
+   */
   async listSubtree(path: string, tx?: Prisma.TransactionClient): Promise<Node[]> {
     const prefix = `${escapeLikePrefix(subtreePrefix(path))}%`;
-    const rows = await this.client(tx).$queryRaw<PrismaNode[]>`
-      SELECT * FROM "nodes" WHERE "path" LIKE ${prefix} ESCAPE '\\'
-    `;
+    const rows = await this.client(tx).$queryRaw<PrismaNode[]>(Prisma.sql`
+      SELECT ${NODE_COLUMNS} FROM "nodes" WHERE "path" LIKE ${prefix} ESCAPE '\\'
+    `);
     return rows.map(toDomain);
   }
 

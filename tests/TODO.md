@@ -191,6 +191,15 @@ no idea how much is missing. So the registry drives the report:
       the reason it is not done yet is that the scanner would first have to
       tell a test title from a `describe` block, which it currently does not
       need to
+- [ ] **Known hole: any `WORD-123` in a test title is read as a declaration id.**
+      A test titled "…the stored value is a SHA-256 of the token…" was reported
+      as an implementation of a declaration called `SHA-256`, because the id
+      pattern `^[A-Z]+(-[A-Z0-9]+)*-\d{3}$` matches it exactly. The gate caught
+      it — that is what "implemented but never declared" is for — so the failure
+      mode is a confusing message rather than a silent miscount, which is the
+      right way round. The fix is to anchor the scan to ids that appear in the
+      registry, or to require a known `AREA-MODULE` prefix; until then, avoid
+      spelling digests and standards that way in a title
 - [ ] The gate is the only place `it.todo` is acceptable. Everywhere else, an
       unfinished test fails
 - [ ] **CI gates on `newly failing`, never on `green == declared`.** The suite

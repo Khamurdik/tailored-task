@@ -59,10 +59,21 @@ export type ShareSummary = z.infer<typeof ShareSummarySchema>;
 /**
  * The only response in the system that carries a plaintext credential, and it
  * carries it exactly once — there is no endpoint that reads a token back.
+ *
+ * **`token` is null for a `user` grant, and that is not a convenience.** The
+ * database refuses the alternative: `shares_kind_shape` requires
+ * `token_hash IS NULL` for a user grant, because a grant addressed to a person
+ * that also carries a bearer token is reachable by anyone holding the string —
+ * which defeats the point of addressing it to a person at all.
+ *
+ * It was typed as a plain `z.string()` and the placeholder data layer returned
+ * `''` to satisfy it. An empty string is not a token; a client checking
+ * `if (token)` gets the right answer by accident and a client rendering it shows
+ * an empty "copy this link" box.
  */
 export const CreatedShareSchema = z.strictObject({
   share: ShareSummarySchema,
-  token: z.string(),
+  token: z.string().nullable(),
   shortCode: z.string().nullable(),
 });
 export type CreatedShare = z.infer<typeof CreatedShareSchema>;

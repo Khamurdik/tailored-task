@@ -117,7 +117,9 @@ export function createShare(request: MockRequest): MockResponse {
   // the share dialog is built against a credential it genuinely cannot re-fetch.
   const body: CreatedShare = {
     share: toSummary(share, null),
-    token: share.token ?? '',
+    // Null, not `''`, for a user grant — the real API cannot return a token
+    // there because the database refuses to store one. See `CreatedShareSchema`.
+    token: share.token,
     shortCode: share.shortCode,
   };
   return created(body);
