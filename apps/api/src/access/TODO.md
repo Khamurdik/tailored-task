@@ -41,16 +41,16 @@ never imports `nodes`.
 `nodes`, `sharing`, `files`. `sharing` sits above this module, not beside it.
 
 ## Responsibilities
-- [ ] Schema: `id`, `node_id`, `kind` (`public_link` | `user`), `token_hash`,
+- [x] Schema: `id`, `node_id`, `kind` (`public_link` | `user`), `token_hash`,
       `short_code_hash` (nullable, unique), `principal_user_id`,
       `principal_email`, `role`, `expires_at`, `revoked_at`, `created_by`,
       `created_at`
-- [ ] `short_code_hash` is the second spelling of the same grant, minted only
+- [x] `short_code_hash` is the second spelling of the same grant, minted only
       when a share is created with `shortLink: true`. It is a column rather than
       a table for one reason: revocation must not have two places to reach. See
       [`links/TODO.md`](../links/TODO.md). Lookups by either hash are indexed;
       neither is ever scanned
-- [ ] The resolver, as a pure function:
+- [x] The resolver, as a pure function:
       ```ts
       resolveAccess({ actor, node: NodeSnapshot, grants: Grant[] }): Role
       ```
@@ -58,14 +58,14 @@ never imports `nodes`.
       repository behind `NODE_LOOKUP` — no recursion and no extra query here.
       This module never learns how `nodes` computes them, which is why a change
       of storage strategy cannot reach the resolver.
-- [ ] `NodeSnapshot.ancestorsDeleted` is what makes the deleted-ancestor rule
+- [x] `NodeSnapshot.ancestorsDeleted` is what makes the deleted-ancestor rule
       below computable. The old five-field snapshot carried only the node's own
       `deletedAt`, so a pure function had no way to see a deleted ancestor and
       the invariant was unenforceable as written. `NodesRepository` computes the
       flag in the query it already runs
-- [ ] `NodeAccessGuard`: load snapshot → load grants for `ancestorIds + self` in
+- [x] `NodeAccessGuard`: load snapshot → load grants for `ancestorIds + self` in
       one query → resolve → attach `req.access` → **404 on denial**
-- [ ] Effective role is `max(role)` across self and all ancestors
+- [x] Effective role is `max(role)` across self and all ancestors
 
 ## Invariants
 - Denial is 404, never 403.
@@ -83,17 +83,46 @@ never imports `nodes`.
   answer to the README's third scaling question, and it should be visibly true
   in the code.
 
+## Implementation notes
+
+- [x] **The `NODE_LOOKUP` binding cannot live in `AppModule`'s `providers`**, and
+      the architecture document's one-liner does not work. Nest resolves a
+      provider's dependencies in **its own** module's injector, not its parent's,
+      so `NodeAccessGuard` — declared here — cannot see a token provided one level
+      up. It fails at boot with "make sure that Symbol(NODE_LOOKUP) is available
+      in the AccessModule module".
+
+      The fix is a small `@Global()` module in the composition root
+      (`NodeLookupBindingModule`). Both alternatives are worse: providing it in
+      this module needs `NodesRepository`, so `access` would import `nodes` and
+      the cycle is back; providing it in `NodesModule` needs the token, so L1
+      would import L2. Global also means every L3 module using
+      `@UseGuards(NodeAccessGuard)` gets it without repeating the binding.
+- [x] **The resolver scopes a share credential to the grant it names**, not to
+      "any live grant on this chain". With two links in one room the weaker check
+      is satisfied by either token — `API-ACCESS-015`.
+- [x] **A pending email grant resolves for nobody.** `principal_user_id` is null
+      until that person logs in, and a resolver that ignored the null would hand
+      the folder to every signed-in user — `API-ACCESS-016`.
+- [x] `owner` comes from `nodes.owner_id` and never from a grant; the database
+      refuses to store a `none` or `owner` role at all, so there is exactly one
+      path to ownership.
+- [x] Credentials are hashed with **SHA-256, not argon2**. A password is
+      low-entropy and human-chosen, so it needs a slow hash; these are 256 and 80
+      bits of CSPRNG output with nothing to brute-force, and this hash sits on
+      every request a share visitor makes.
+
 ## Tests
 
 > These are the **requirements**. They are declared as addressable, traceable tests in
 > [`tests/suites/api/access/TODO.md`](../../../../tests/suites/api/access/TODO.md) and implemented there — never in this module's folder.
-- [ ] **Permission matrix**: owner / invited viewer / public token / stranger ×
+- [x] **Permission matrix**: owner / invited viewer / public token / stranger ×
       room / folder / file × read / write. Table-driven, pure, ~24 cases, runs
       in milliseconds. Cite this file in the README.
-- [ ] Inheritance: a grant on a grandparent resolves on a grandchild
-- [ ] A grant on a deleted ancestor resolves to `none`
-- [ ] An expired grant resolves to `none` without a clock stub hack
-- [ ] `max(role)` wins when two grants on the ancestor chain differ
+- [x] Inheritance: a grant on a grandparent resolves on a grandchild
+- [x] A grant on a deleted ancestor resolves to `none`
+- [x] An expired grant resolves to `none` without a clock stub hack
+- [x] `max(role)` wins when two grants on the ancestor chain differ
 
 ## Done when
 The matrix is green and no other module in the codebase reads the `shares`

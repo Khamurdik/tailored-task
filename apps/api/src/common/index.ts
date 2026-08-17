@@ -22,6 +22,8 @@ export { CursorService } from './pagination/cursor.service';
 
 export { normalizeName, sanitizeName, suggestConflictName } from './naming/names';
 
+export type { AccessContext, RequestActor } from './http/request-context';
+
 export { CommonModule } from './common.module';
 
 /**

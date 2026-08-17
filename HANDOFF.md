@@ -41,13 +41,15 @@ Phases 0–2 have landed. **The API boots, connects to Postgres, and serves
 | --- | --- |
 | Module specs (`*/TODO.md`) for all 19 modules | Any `.ts` under `apps/web/src` |
 | pnpm workspace, 5 packages, all configs | `nodes`, `auth`, `access`, `sharing`, `links`, `files`, `jobs` |
-| 548 declared tests in 92 groups, 80 of them `P0` | `shares`, `refresh_tokens`, `job_runs` tables |
+| 556 declared tests in 93 groups, 83 of them `P0` | `job_runs` table |
 | **`packages/shared` — the full contract, CJS + ESM** | The integration harness (`tests/src/support/`) |
-| **`tests/src/registry` + the coverage gate — 120 of 548 implemented** | The run-log reporter and `pnpm history` |
+| **`tests/src/registry` + the coverage gate — 156 of 556 implemented** | The run-log reporter and `pnpm history` |
 | **`common` — config, Prisma, errors, cursor, names, bus, health** | |
 | **`storage` — port, S3 adapter, in-memory adapter** | |
 | **`users` — repository, service, seeder, `users` table** | |
-| **`nodes` — materialized path, 6 indexes, 7 checks, property test green** | A `nodes` controller (no HTTP surface yet) |
+| **`nodes` — materialized path, 6 indexes, 7 checks, property test green** | Any controller — no HTTP surface above `/health` |
+| **`access` — pure resolver, guard, codec, `shares` table, matrix green** | `sharing`, `links`, `files`, `jobs` |
+| **`auth` — login, Google linking, refresh rotation, `SessionGuard`, 5 routes** | Any node-scoped controller |
 | **`docker-compose.test.yml` + the integration harness — verified** | |
 | **`apps/web` — app shell, 10 UI primitives incl. dialog, login, route guards** | `explorer`, `uploads`, `viewer`, `sharing`, `public-view` |
 | **`apps/web/shared` — client, token store, refresh lock, errors, query keys** | A dialog primitive (no Radix yet) |
@@ -64,7 +66,7 @@ users and reports `unchanged` on a second run.
 apps/api/src/<module>/TODO.md     12 backend modules, L0–L4
 apps/web/src/{shared,features/*}  7 frontend modules
 packages/shared/                  the zod wire contract
-tests/                            all 548 declarations, mirrors the module tree
+tests/                            all 556 declarations, mirrors the module tree
 docs/                             ARCHITECTURE, TOOLCHAIN
 ```
 
@@ -261,7 +263,7 @@ is what makes deferring it safe.
   runner and no test dependency.
 - Module `TODO.md` **Tests** sections remain as *requirements*, each pointing at
   its mirrored suite.
-- **548 declarations in 92 groups**, declared in markdown tables that are both
+- **556 declarations in 93 groups**, declared in markdown tables that are both
   the human doc and the machine registry.
 - Driven by, in priority order: security checks → user stories → invariants →
   contracts. Explicitly not by internal structure.
@@ -449,6 +451,83 @@ is what makes deferring it safe.
   Each would have needed the repository and nothing else, so both were
   pass-throughs; their operations are methods on `NodesService`. The path format
   did earn its own file.
+
+### 3.18 `access` — and the binding the architecture doc got wrong
+- Pure `resolveAccess`, the `shares` table, `NodeAccessGuard`, `ShareCodec`, and
+  the `NODE_LOOKUP` port. **The permission matrix runs in 7ms**, which is the
+  entire payoff of pushing the table and the resolver down to L2 — cite
+  `tests/suites/api/access/matrix.unit.spec.ts` in the README.
+- **The documented binding does not work.** `docs/ARCHITECTURE.md` says
+  `providers: [{ provide: NODE_LOOKUP, useExisting: NodesRepository }]` in
+  `AppModule`. Nest resolves a provider's dependencies in **its own** module's
+  injector, not its parent's, so `NodeAccessGuard` — declared in `AccessModule` —
+  cannot see it, and the app fails at boot. Fixed with a small `@Global()`
+  `NodeLookupBindingModule` in the composition root. Both alternatives reintroduce
+  a forbidden import: providing it in `access` needs `NodesRepository` (the cycle
+  the port exists to break), providing it in `nodes` needs the token (L1 → L2).
+- **Two `P0` cases the original matrix could not have caught**, both added while
+  implementing:
+  - `API-ACCESS-015` — with two live links in one room, "is there a live grant on
+    this chain?" is satisfied by *either* token. The resolver has to scope to the
+    grant the caller **named**, not to any grant that happens to apply.
+  - `API-ACCESS-016` — a grant addressed to an email has a null
+    `principal_user_id` until that person logs in. A resolver that ignored the
+    null would hand the folder to every signed-in user.
+- `owner` comes from `nodes.owner_id` and never from a grant. The database
+  refuses to store `none` or `owner` at all (`shares_role_is_issuable`), so there
+  is exactly one path to ownership and no unaudited second one.
+- Expiry and revocation are excluded **in the predicate**, which is what keeps
+  the resolver pure: it never reads a clock, so `API-ACCESS-007` asserts the query
+  and needs no stub. `API-ACCESS-009` asserts one live grant comes back out of
+  three stored rows.
+- SHA-256 for credentials, not argon2. A password is low-entropy and
+  human-chosen; these are 256 and 80 bits of CSPRNG output with nothing to
+  brute-force, and the hash is on the path of every share visitor's request.
+- Four static boundary checks now guard the design rather than describing it:
+  nothing outside `access` touches `shares`, nothing issues `editor`, `access`
+  never imports `nodes`, and **there is no `forwardRef` anywhere** — the stated
+  rule made falsifiable.
+- The integration harness now boots **`AppModule` itself** rather than listing
+  modules. The list drifted within the hour: `access` was added to the app and not
+  to the harness, so the suite would have been exercising a composition that does
+  not exist in production, `NODE_LOOKUP` binding included.
+
+### 3.19 `auth` — and the boundary that decided where a type lives
+- Password login, Google linking, refresh rotation with reuse detection,
+  `SessionGuard`, `@RequireAuth()`, `@Actor()`, and five routes. **The API now has
+  an HTTP surface above `/health`.** 18 integration tests green, including the
+  timing-oracle check.
+- **`SessionGuard` attaches `{ shareToken }`, not a grant id.** Resolving a
+  credential means reading `shares`, and the moment `auth` does that the
+  authn/authz split is gone. `NodeAccessGuard` translates instead.
+- That forced a decision worth recording: **both L2 modules need the
+  `req.actor` type and neither may import the other**, so `RequestActor` and the
+  `express.Request` augmentation live in `common`. It is the shape of an HTTP
+  request rather than a domain concept, which is what L0 is for — and the
+  alternative was an augmentation declared twice with conflicting types.
+- **Expiry is not a replay.** A `reused` outcome kills the family; an expired
+  token is simply refused. Conflating them would revoke a family every time an
+  idle user came back — a self-inflicted logout on the most ordinary path there
+  is. `API-AUTH-027`, added while implementing.
+- `user.authenticated` fires on login and **not on refresh** (`API-AUTH-028`). A
+  rotation is not a login, and re-running the pending-grant claim on every
+  refresh is pointless work on the hot path.
+- `/auth/logout` is deliberately **not** `@RequireAuth()`. Someone whose access
+  token has already expired still needs the family revoked — that is precisely
+  when they most need it.
+- A malformed login body returns the **credentials failure**, not a 400. A
+  validation error tells a caller their guess had the wrong shape.
+- The throttler is global with `/health` opted out via `@SkipThrottle()`. App
+  Runner polls it every ten seconds, and throttling the health check is how an
+  instance gets marked unhealthy by its own rate limiter.
+- `expiresIn` is passed in **seconds**. `@nestjs/jwt` types it against `ms`'s
+  branded `StringValue`, so the `"1d"` config string does not fit.
+- Verified live, not just by test: `POST /auth/register` → **404 from the
+  router**, a bad login → the `UNAUTHENTICATED` envelope, `/auth/me` anonymous →
+  401, and **zero `Set-Cookie` headers** on any auth response.
+- `API-AUTH-005` samples ten times and compares **medians**. argon2 at 19 MiB is
+  deliberately expensive, the property is a ratio rather than a figure, and one GC
+  pause in a fifty-sample run is enough to fail a mean.
 
 ## 4. Verified facts worth not re-checking
 

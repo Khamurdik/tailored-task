@@ -57,7 +57,10 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  nodes Node[]
+  nodes          Node[]
+  sharesCreated  Share[]        @relation("ShareCreator")
+  sharesReceived Share[]        @relation("SharePrincipal")
+  refreshTokens  RefreshToken[]
 
   @@map("users")
 }
@@ -134,6 +137,105 @@ model Node {
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
+  shares Share[]
+
   @@index([rootId])
   @@map("nodes")
+}
+
+enum ShareKind {
+  public_link
+  user
+
+  @@map("share_kind")
+}
+
+enum Role {
+  none
+  viewer
+  editor
+  owner
+
+  @@map("role")
+}
+
+/// Owned by `access`. Grants, and the credentials that reach them.
+///
+/// `access` sits below `sharing` and `links` on purpose: a share controller needs
+/// the "only an owner may share this" guard, and that guard needs to read
+/// grants. One module holding both is a cycle. Putting the table and the
+/// resolver in the lower layer breaks it, and the payoff is that `resolveAccess`
+/// becomes a pure function — so the whole permission matrix is a millisecond
+/// unit test instead of an e2e suite.
+model Share {
+  id String @id @default(uuid()) @db.Uuid
+
+  nodeId String @map("node_id") @db.Uuid
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  kind ShareKind
+  role Role      @default(viewer)
+
+  /// SHA-256 of the 43-character token. The plaintext exists in exactly one
+  /// response and is never readable again.
+  tokenHash String? @unique @map("token_hash")
+
+  /// SHA-256 of the optional 16-character short code — a second spelling of the
+  /// same grant. A column rather than a table so revocation has one place to
+  /// reach. Opt-in, because a grant is only as strong as its weakest credential
+  /// and a code takes this share from 256 bits to 80.
+  shortCodeHash String? @unique @map("short_code_hash")
+
+  /// For a `user` grant. `principal_email` is set before the account exists —
+  /// `sharing` binds it at that user's next login, which is the only binding
+  /// mechanism there is (see HANDOFF §3.13).
+  principalUserId String? @map("principal_user_id") @db.Uuid
+  principalUser   User?   @relation("SharePrincipal", fields: [principalUserId], references: [id], onDelete: Cascade)
+  principalEmail  String? @map("principal_email") @db.Citext
+
+  expiresAt DateTime? @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  createdById String @map("created_by") @db.Uuid
+  createdBy   User   @relation("ShareCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([nodeId])
+  @@index([principalEmail])
+  @@map("shares")
+}
+
+/// Owned by `auth`. One row per issued refresh token.
+///
+/// Only a SHA-256 is stored; the plaintext lives on the client. `familyId` is
+/// what makes reuse detection possible: rotation issues a new row in the same
+/// family, so presenting an already-rotated token identifies the family to kill
+/// rather than just the one token to reject.
+model RefreshToken {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the token. Unique, so a replay is a lookup rather than a scan.
+  tokenHash String @unique @map("token_hash")
+
+  /// Every token descended from one login shares this. Killing a family is what
+  /// turns a detected replay into a revoked session rather than a rejected
+  /// request.
+  familyId String @map("family_id") @db.Uuid
+
+  expiresAt DateTime  @map("expires_at")
+  /// Set when this token is rotated away or the family is revoked. A row is
+  /// never deleted here — `purge-expired-tokens` does that on a schedule, and
+  /// until then the row is what lets a replay be *detected* rather than merely
+  /// failing to match.
+  revokedAt DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("refresh_tokens")
 }

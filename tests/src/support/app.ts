@@ -1,9 +1,8 @@
-import { Test, type TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule, type TestingModuleBuilder } from '@nestjs/testing';
 
-import { APP_CONFIG, CommonModule, PrismaService, loadConfig } from '@api/common';
-import { NodesModule } from '@api/nodes';
+import { AppModule } from '@api/app.module';
+import { APP_CONFIG, PrismaService, loadConfig } from '@api/common';
 import { InMemoryStorageAdapter, STORAGE } from '@api/storage';
-import { UsersModule } from '@api/users';
 
 /**
  * Boots the real modules against the real database and a fake bucket.
@@ -16,6 +15,18 @@ import { UsersModule } from '@api/users';
  * Note what is *not* faked: Prisma, the event bus, the naming service, the
  * transaction boundaries. A test that mocks those asserts that this file is
  * consistent with itself.
+ *
+ * ## Why it imports `AppModule` rather than listing modules
+ *
+ * The first version listed the modules it needed. It drifted within the hour:
+ * `access` was added to the application and not to this file, so every test
+ * asking for `SharesRepository` failed with "this provider does not exist in the
+ * current context" — and worse, the `NODE_LOOKUP` binding that `AppModule`
+ * performs was simply absent, so the integration suite would have been testing a
+ * composition that does not exist in production.
+ *
+ * Importing the real root removes the whole category. Only the two things that
+ * genuinely cannot be real in a test — config and the bucket — are overridden.
  */
 export interface TestApp {
   module: TestingModule;
@@ -45,17 +56,29 @@ function testEnv(): NodeJS.ProcessEnv {
   };
 }
 
-export async function createTestApp(): Promise<TestApp> {
+export interface TestAppOptions {
+  /**
+   * A hook for the one legitimate reason to fake something else: an external
+   * service this process cannot reach, like Google's token verifier. Anything
+   * this repo owns should be real.
+   */
+  override?: (builder: TestingModuleBuilder) => TestingModuleBuilder;
+  /** Extra environment, merged over the test defaults. */
+  env?: NodeJS.ProcessEnv;
+}
+
+export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const storage = new InMemoryStorageAdapter();
 
-  const module = await Test.createTestingModule({
-    imports: [CommonModule, UsersModule, NodesModule],
-  })
+  let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(APP_CONFIG)
-    .useValue(loadConfig(testEnv()))
+    .useValue(loadConfig({ ...testEnv(), ...options.env }))
     .overrideProvider(STORAGE)
-    .useValue(storage)
-    .compile();
+    .useValue(storage);
+
+  if (options.override !== undefined) builder = options.override(builder);
+
+  const module = await builder.compile();
 
   await module.init();
   const prisma = module.get(PrismaService);

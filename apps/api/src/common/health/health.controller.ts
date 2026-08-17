@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -6,6 +7,9 @@ import { PrismaService } from '../prisma/prisma.service';
  * Two health endpoints, and the difference between them is the whole point.
  */
 @Controller('health')
+// App Runner polls `/health` about every ten seconds. Throttling it is how an
+// instance gets marked unhealthy by its own rate limiter.
+@SkipThrottle()
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

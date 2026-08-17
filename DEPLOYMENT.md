@@ -324,7 +324,7 @@ checked; none exclude either version.
 
 ## 7. CI
 
-The suite is **red by design** until the last declaration lands — 548 declared,
+The suite is **red by design** until the last declaration lands — 556 declared,
 and the coverage gate emits one failing test per unimplemented one. So a red
 build is the resting state and cannot be the merge signal.
 
@@ -349,12 +349,13 @@ Tracked here rather than discovered at deploy time.
   `pnpm dev:web` and `pnpm build` both work. What is behind the login is two
   placeholder screens: `explorer`, `uploads`, `viewer`, `sharing` and
   `public-view` are not built.
-- **The API serves only `/health` and `/health/deep`.** `common`, `storage`,
-  `users` and `nodes` are in, but `nodes` has **no controller yet** — the tree
-  works and nothing HTTP reaches it. `auth`, `access`, `sharing`, `links`,
-  `files` and `jobs` are not built, so there is no login and no upload.
-- **`users` and `nodes` exist.** Two migrations. `shares`, `refresh_tokens` and
-  `job_runs` land with their modules. The `nodes` storage strategy is decided —
+- **The API serves `/health` and the five `/auth` routes.** `common`, `storage`,
+  `users`, `nodes`, `access` and `auth` are in — so **login works end to end**.
+  What is missing is a controller for anything node-scoped: the tree and the
+  permission resolver both work and no HTTP route reaches them. `sharing`,
+  `links`, `files` and `jobs` are not built, so there is no sharing and no
+  upload.
+- **`users`, `nodes`, `shares` and `refresh_tokens` exist.** Four migrations. `job_runs` lands with `jobs`. The `nodes` storage strategy is decided —
   materialized path, six indexes, seven CHECK constraints — see
   [`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage.
 - **`api-integration` needs Docker running.** `pnpm test` includes it, and its

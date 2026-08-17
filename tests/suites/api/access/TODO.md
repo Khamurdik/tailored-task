@@ -39,6 +39,17 @@ suite. This suite is the payoff for that design decision — cite it in the READ
 | API-ACCESS-012 | Ancestor ids come from `node.path` — resolution issues one grant query regardless of depth | integration | P1 |
 | API-ACCESS-013 | The `editor` role is defined in the enum and never issued by any code path | unit | P1 |
 | API-ACCESS-014 | No module outside `access` reads the `shares` table | security | P1 |
+| API-ACCESS-017 | `access` never imports `nodes` — the port is not bypassed | security | P1 |
+| API-ACCESS-018 | No `forwardRef` appears anywhere in the codebase | unit | P2 |
+
+### A credential resolves only the grant it names
+
+| ID | Behaviour | Kind | Pri |
+| --- | --- | --- | --- |
+| API-ACCESS-015 | A token for one folder does not resolve a sibling grant in the same room | security | P0 |
+| API-ACCESS-016 | A pending email grant, not yet bound to a user, resolves for nobody | security | P0 |
+| API-ACCESS-019 | A credential lookup returns null for unknown, revoked and expired alike | security | P0 |
+| API-ACCESS-020 | The `NODE_LOOKUP` port is bound and answers, with neither module importing the other | integration | P1 |
 
 ## Notes
 - **API-ACCESS-001 is the flagship.** Table-driven, ~24+ cases, pure, runs in
@@ -49,3 +60,10 @@ suite. This suite is the payoff for that design decision — cite it in the READ
   status codes but different bodies or timings still leak existence.
 - API-ACCESS-014 is a static check over the source tree, not a runtime test.
   It defends the boundary the whole module exists to create.
+- API-ACCESS-015 and 016 were added while implementing the resolver, because both
+  are ways to be wrong that the original matrix could not catch. 015: with two
+  live links in one room, asking "is there a live grant on this chain?" is
+  satisfied by *either* token, so a scoping check has to name the presented
+  grant. 016: a grant addressed to an email has a null `principalUserId` until
+  that person logs in, and a resolver that ignored the null would hand the folder
+  to every signed-in user. Both are `P0` — each is a leak.

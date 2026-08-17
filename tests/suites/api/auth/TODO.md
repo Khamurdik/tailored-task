@@ -32,6 +32,8 @@ path may ever create a user.
 | API-AUTH-012 | The refresh token is accepted in the request body and rejected as a query parameter | security | P1 |
 | API-AUTH-013 | `SessionGuard` yields `actor === null` for an anonymous request rather than 401 | integration | P1 |
 | API-AUTH-014 | `SessionGuard` resolves an actor from `X-Share-Token` | integration | P1 |
+| API-AUTH-027 | An expired refresh token is refused **without** killing the family | security | P1 |
+| API-AUTH-028 | A refresh does not emit `user.authenticated` | unit | P2 |
 
 ### Google sign-in and account linking
 
@@ -56,6 +58,16 @@ path may ever create a user.
 | API-AUTH-026 | The API boots and serves password login with `GOOGLE_CLIENT_ID` unset | integration | P1 |
 
 ## Notes
+- API-AUTH-027 was added while implementing. Expiry is **not** a replay: nobody
+  did anything wrong, the session simply ended. Treating it as theft would revoke
+  a family every time an idle user came back, which is a self-inflicted logout on
+  the most ordinary path there is.
+- API-AUTH-028 pins the other half of API-AUTH-025. A rotation is not a login, so
+  re-running the pending-grant claim on every refresh would be pointless work on
+  the hot path.
+- API-AUTH-005 samples ten times rather than fifty and compares **medians**.
+  argon2 at 19 MiB is deliberately expensive, the property is a ratio rather than
+  a figure, and a single GC pause in a fifty-sample run is enough to fail a mean.
 - API-AUTH-016 must assert the **row count is unchanged**, not merely that the
   response was an error. The failure this guards against is a helpful upsert.
 - API-AUTH-017..020 need a fake Google verifier. Do not call Google in tests;

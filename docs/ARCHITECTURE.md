@@ -7,18 +7,18 @@ A Data Room is a tree. Rooms, folders, and files are rows in one
 `parent_id`. `parent_id` is the source of truth for ancestry; everything else
 about the tree is derived from it.
 
-*How* ancestry is queried — a materialized `path` column, a recursive CTE, a
-closure table — is a decision **inside `nodes`**, and it is deliberately still
-open. See [`nodes/TODO.md`](../apps/api/src/nodes/TODO.md) §Storage. No module
-outside `nodes` names a column, and nothing above L1 is allowed to assume a
-strategy was chosen. What the rest of the system compiles against is the
-**ancestor chain as an ordered list of ids**, which every candidate strategy can
-produce.
+*How* ancestry is queried is a decision **inside `nodes`**, and it has been made:
+a materialized `path` of ancestor ids. See
+[`nodes/TODO.md`](../apps/api/src/nodes/TODO.md) §Storage for the comparison
+against a recursive CTE and a closure table.
 
-The materialized path is the strategy the module currently expects to pick, so
-the notes that price it — prefix `LIKE` under `text_pattern_ops`, fixed-width
-UUID segments, the depth cap — are kept below rather than discarded. They are
-consequences of a choice, not premises of the design.
+The important part is what did **not** change when it was chosen. No module
+outside `nodes` names a column, and nothing above L1 assumes a strategy: what the
+rest of the system compiles against is the **ancestor chain as an ordered list of
+ids**, which every candidate could produce. `path` appears in exactly two files.
+So the notes that price the choice — prefix `LIKE` under `text_pattern_ops`,
+fixed-width UUID segments, the depth cap — are consequences of a decision inside
+one module, not premises of the design.
 
 Everything else in the backend is one of three things: something that owns a
 piece of that tree's lifecycle, something that evaluates who may touch it, or
@@ -114,11 +114,27 @@ export interface NodeLookupPort {
 }
 ```
 
-`NodesRepository` implements it. The binding happens once, in `AppModule`:
+`NodesRepository` implements it. The binding happens once, in the composition
+root — but **not** as a plain provider on `AppModule`, which is what an earlier
+revision of this document said and does not work:
 
 ```ts
-providers: [{ provide: NODE_LOOKUP, useExisting: NodesRepository }]
+// apps/api/src/app.module.ts
+@Global()
+@Module({
+  imports: [NodesModule],
+  providers: [{ provide: NODE_LOOKUP, useExisting: NodesRepository }],
+  exports: [NODE_LOOKUP],
+})
+class NodeLookupBindingModule {}
 ```
+
+Nest resolves a provider's dependencies within **its own** module's injector, not
+its parent's. `NodeAccessGuard` is declared in `AccessModule`, so a token
+provided one level up is invisible to it and the app fails at boot. The two
+tempting fixes both reintroduce a forbidden import — providing it in `access`
+needs `NodesRepository`, providing it in `nodes` needs the token — so a global
+binding declared at the root is what keeps both modules ignorant of each other.
 
 No `forwardRef` anywhere in the codebase. If you find yourself reaching for
 one, a boundary is wrong.

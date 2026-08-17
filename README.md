@@ -76,7 +76,7 @@ record the README deliverable asks for.
 | [`tests`](tests/TODO.md) | Every test in the system, declared before it is written. Mirrors the module tree. |
 
 No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
-test *requirements*; [`tests/`](tests/TODO.md) turns those into 548 addressable,
+test *requirements*; [`tests/`](tests/TODO.md) turns those into 556 addressable,
 traceable declarations, grouped by what the user is trying to do, and is where
 they are implemented. The first run is meant to be red — see
 [`tests/TODO.md`](tests/TODO.md) §4.

@@ -86,7 +86,7 @@ tell whether a case is missing.
 
 ### `P0` is deliberately rare
 
-**80 of 548.** An earlier revision had 332, which is not a prioritisation — if
+**83 of 556.** An earlier revision had 332, which is not a prioritisation — if
 two thirds of the suite blocks a module, nothing does. A row earns `P0` only if
 its failure is one of:
 
@@ -176,7 +176,7 @@ no idea how much is missing. So the registry drives the report:
       pinned by `src/registry/scan.spec.ts`
 - [x] Rows marked `RETIRED` keep their number but leave the `declared` count.
       The row stays so the ID is never reused; the requirement is gone
-- [x] Result: run #1 has ~0 green and **548 red** — one per live declaration.
+- [x] Result: run #1 has ~0 green and **556 red** — one per live declaration.
       Progress is `implemented / declared` and `green / declared`, both real
       numbers rather than a percentage of whatever tests happen to exist
 - [x] An implementation whose ID is not declared also fails the gate. Tests do
@@ -223,7 +223,7 @@ runs/
   "durationMs": 48213,
   "git": { "sha": "a1b2c3d", "branch": "main", "dirty": false },
   "projects": ["contract", "api-unit", "api-integration", "web-unit"],
-  "declared": 548,
+  "declared": 556,
   "implemented": 37,
   "totals": { "passed": 31, "failed": 6, "skipped": 0 },
   "failedIds": ["API-NODES-011", "API-ACCESS-004"]
