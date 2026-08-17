@@ -59,7 +59,13 @@ The wire format.
       'NAME_CONFLICT' | 'GONE' | 'CYCLIC_MOVE' | 'DEPTH_LIMIT'
       | 'FILE_TOO_LARGE' | 'UNSUPPORTED_FILE_TYPE' | 'NOT_FOUND'
       | 'UNAUTHENTICATED' | 'RATE_LIMITED' | 'CONFLICT' | 'VALIDATION_FAILED'
+      | 'INTERNAL'
       ```
+      `INTERNAL` is every 500. Added while writing the exception filter, which
+      had nowhere to map an unrecognised exception and was reaching for
+      `CONFLICT` — a code that would have satisfied `CONTRACT-004` while
+      telling the client something false. A union that covers every code the
+      API emits has to include the one it emits when it is broken.
       `UNSUPPORTED_FILE_TYPE` is what `/complete` returns under
       `UPLOAD_FILE_POLICY=pdf-only`. `CONFLICT` is what `jobs` returns when a
       run is already in flight and `onOverlap` is `reject`. `VALIDATION_FAILED`

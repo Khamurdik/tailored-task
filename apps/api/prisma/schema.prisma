@@ -1,6 +1,10 @@
-// Datasource and generator only. The models are deliberately not written yet:
-// the `nodes` table shape and its five indexes are still unspecified — see
-// PROJECT-ANALYSIS.md §6.2 and apps/api/src/nodes/TODO.md.
+// Models arrive with the module that owns them, in build order. `users` is
+// here; `nodes`, `shares`, `refresh_tokens` and `job_runs` land with theirs.
+//
+// `nodes` in particular is waiting on a decision rather than on typing: the
+// table is one self-referencing relation, but how ancestry is made queryable
+// (materialized path, recursive CTE, closure table) is deliberately still open
+// and belongs to that module. See apps/api/src/nodes/TODO.md §Storage.
 //
 // Staying on Prisma 6 (not 7) is a compatibility decision — see docs/TOOLCHAIN.md.
 
@@ -17,4 +21,41 @@ datasource db {
   //           (users/TODO.md)
   // pg_trgm — GIN index behind room-scoped name search (search/TODO.md)
   extensions = [citext, pg_trgm]
+}
+
+/// Owned by `users`. Provisioned from `.env` by the seeder — no HTTP request in
+/// the system creates a row here.
+model User {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `citext`, not `lower()` at every call site. Case-insensitive comparison
+  /// belongs in the column's type: put it in the queries instead and the one
+  /// query that forgets is a duplicate account, discovered much later.
+  ///
+  /// NFC normalization is still the application's job — `citext` folds case,
+  /// not Unicode composition.
+  email String @unique @db.Citext
+
+  /// Nullable: a user provisioned for Google-only access has no password.
+  /// `auth` must read null as "no password login", never as "any password
+  /// matches" — which is the bug this comment exists to prevent.
+  passwordHash String? @map("password_hash")
+
+  name String
+
+  /// Unique, so two users cannot claim one Google identity. Stored on first
+  /// successful Google login and matched on thereafter, because a person can
+  /// change the email on their Google account and `sub` is the only stable
+  /// identifier.
+  googleSub String? @unique @map("google_sub")
+
+  /// Gates the `/jobs` endpoints and nothing else. Set only by the seeder:
+  /// there is no endpoint that grants it and no way for a user to escalate
+  /// into it.
+  isAdmin Boolean @default(false) @map("is_admin")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
 }

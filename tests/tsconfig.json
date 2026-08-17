@@ -18,7 +18,11 @@
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": false,
 
-    "types": ["node", "vitest/globals"],
+    // `vite/client` because the web suites import from apps/web, and that
+    // source reads `import.meta.env`. Without it the app typechecks (it has
+    // the reference) and this project does not, which is a confusing place for
+    // the same code to disagree with itself.
+    "types": ["node", "vitest/globals", "vite/client"],
 
     "paths": {
       "@api/*": ["../apps/api/src/*"],

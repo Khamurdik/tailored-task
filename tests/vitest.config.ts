@@ -6,6 +6,21 @@ import { defineConfig } from 'vitest/config';
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 /**
+ * The same aliases `tsconfig.json` declares under `compilerOptions.paths`.
+ *
+ * They have to be repeated because Vite does not read tsconfig paths — the
+ * editor resolves `@api/...` from the tsconfig and the runner resolves it from
+ * here, so the two must be kept in step. The symptom when they drift is a
+ * "Cannot find package" at run time on an import the editor is perfectly happy
+ * with.
+ */
+const alias = {
+  '@api': r('../apps/api/src'),
+  '@web': r('../apps/web/src'),
+  '@support': r('./src/support'),
+};
+
+/**
  * One runner for the whole system. Four projects, because they need different
  * environments and have very different costs — `--project` lets the fast ones
  * run on every save and the slow ones run on demand.
@@ -51,6 +66,7 @@ export default defineConfig({
       {
         // Pure functions and services with fakes. No I/O.
         plugins: [swc.vite({ module: { type: 'es6' } })],
+        resolve: { alias },
         test: {
           name: 'api-unit',
           root: r('.'),
@@ -62,6 +78,7 @@ export default defineConfig({
       {
         // Boots the app against a real Postgres and a fake bucket.
         plugins: [swc.vite({ module: { type: 'es6' } })],
+        resolve: { alias },
         test: {
           name: 'api-integration',
           root: r('.'),
@@ -74,6 +91,7 @@ export default defineConfig({
         },
       },
       {
+        resolve: { alias },
         test: {
           name: 'web-unit',
           root: r('.'),

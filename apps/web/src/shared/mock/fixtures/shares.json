@@ -1,0 +1,72 @@
+[
+  {
+    "id": "40000000-0000-4000-8000-000000000001",
+    "nodeId": "20000000-0000-4000-8000-000000000002",
+    "kind": "public_link",
+    "role": "viewer",
+    "principalEmail": null,
+    "principalUserId": null,
+    "token": "meridian-financials-demo-link",
+    "shortCode": "H7QK4M2XR9TB5WVN",
+    "expiresAt": null,
+    "revokedAt": null,
+    "createdBy": "00000000-0000-4000-8000-0000000000a1",
+    "createdAt": "2026-08-01T10:00:00.000Z"
+  },
+  {
+    "id": "40000000-0000-4000-8000-000000000002",
+    "nodeId": "20000000-0000-4000-8000-000000000004",
+    "kind": "user",
+    "role": "viewer",
+    "principalEmail": "bo@example.com",
+    "principalUserId": "00000000-0000-4000-8000-0000000000a2",
+    "token": null,
+    "shortCode": null,
+    "expiresAt": null,
+    "revokedAt": null,
+    "createdBy": "00000000-0000-4000-8000-0000000000a1",
+    "createdAt": "2026-08-02T09:15:00.000Z"
+  },
+  {
+    "id": "40000000-0000-4000-8000-000000000003",
+    "nodeId": "20000000-0000-4000-8000-000000000001",
+    "kind": "public_link",
+    "role": "viewer",
+    "principalEmail": null,
+    "principalUserId": null,
+    "token": "revoked-corporate-link",
+    "shortCode": null,
+    "expiresAt": null,
+    "revokedAt": "2026-08-09T17:45:00.000Z",
+    "createdBy": "00000000-0000-4000-8000-0000000000a1",
+    "createdAt": "2026-07-11T11:00:00.000Z"
+  },
+  {
+    "id": "40000000-0000-4000-8000-000000000004",
+    "nodeId": "20000000-0000-4000-8000-000000000005",
+    "kind": "public_link",
+    "role": "viewer",
+    "principalEmail": null,
+    "principalUserId": null,
+    "token": "expired-northwind-link",
+    "shortCode": null,
+    "expiresAt": "2026-08-05T00:00:00.000Z",
+    "revokedAt": null,
+    "createdBy": "00000000-0000-4000-8000-0000000000a1",
+    "createdAt": "2026-07-22T08:00:00.000Z"
+  },
+  {
+    "id": "40000000-0000-4000-8000-000000000005",
+    "nodeId": "20000000-0000-4000-8000-000000000003",
+    "kind": "user",
+    "role": "viewer",
+    "principalEmail": "carla@partner-firm.example",
+    "principalUserId": null,
+    "token": null,
+    "shortCode": null,
+    "expiresAt": null,
+    "revokedAt": null,
+    "createdBy": "00000000-0000-4000-8000-0000000000a1",
+    "createdAt": "2026-08-12T15:40:00.000Z"
+  }
+]

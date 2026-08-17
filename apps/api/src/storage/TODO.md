@@ -28,23 +28,23 @@ export interface StoragePort {
 implementation in tests without touching a single caller.
 
 ## Responsibilities
-- [ ] `S3StoragePort` implementation using `@aws-sdk/client-s3` and
+- [x] `S3StoragePort` implementation using `@aws-sdk/client-s3` and
       `@aws-sdk/s3-request-presigner`
-- [ ] Key scheme: `rooms/{rootId}/{nodeId}` — never a user-supplied filename, so
+- [x] Key scheme: `rooms/{rootId}/{nodeId}` — never a user-supplied filename, so
       key collisions and path traversal are impossible by construction.
       **`{versionId}` was removed.** No module owns a versions table and no
       responsibility creates one, so the segment was a placeholder for a feature
       that does not exist — and `files`' "never delete an object referenced by
       any file version" had nothing to check against. Add the segment back in
       the same change that adds the table, not before
-- [ ] Pin `Content-Type` and `Content-Length` into the PUT signature so a client
+- [x] Pin `Content-Type` and `Content-Length` into the PUT signature so a client
       cannot upload something other than what it declared. Note that a signed
       `Content-Length` is an **exact** value, not a ceiling — a presigned PUT
       cannot express a size range at all (that needs a POST policy). Hence
       `exactBytes`, not `maxBytes`. The size *limit* is enforced at
       `/uploads/init` against `MAX_FILE_SIZE`, and the authoritative size comes
       from `HeadObject` at `/complete`
-- [ ] `presignGet` sets `Content-Disposition` with the current display name, so
+- [x] `presignGet` sets `Content-Disposition` with the current display name, so
       a download keeps the right name. The disposition **type** is decided by
       the object's stored content type, not by the caller:
       - `application/pdf` → `inline`, so the browser renders it
@@ -53,10 +53,10 @@ implementation in tests without touching a single caller.
       user-uploaded HTML or SVG inline from the bucket origin is a stored-XSS
       path straight to the session token, and the web app's CSP cannot reach
       that origin to stop it.
-- [ ] Quote and escape the filename per RFC 6266 (`filename*=UTF-8''…`). A name
+- [x] Quote and escape the filename per RFC 6266 (`filename*=UTF-8''…`). A name
       containing `"` or a newline must not be able to split the header
-- [ ] TTL for GET defaults to **60 seconds**
-- [ ] `InMemoryStoragePort` for tests
+- [x] TTL for GET defaults to **60 seconds**
+- [x] `InMemoryStoragePort` for tests
 
 ## Invariants
 - A presigned GET cannot be revoked once issued. The 60s TTL bounds the

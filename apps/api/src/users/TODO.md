@@ -22,16 +22,18 @@ below, not through a request.
 `auth` (auth depends on this, not the reverse), `nodes`, `access`.
 
 ## Responsibilities
-- [ ] Schema: `id`, `email` (citext, unique), `password_hash` (nullable),
+- [x] Schema: `id`, `email` (citext, unique), `password_hash` (nullable),
       `name`, `google_sub` (nullable, unique), `is_admin` (boolean, default
       false), `created_at`
-- [ ] `is_admin` gates the `jobs` endpoints and nothing else today. It is set
+- [x] `is_admin` gates the `jobs` endpoints and nothing else today. It is set
       only by the seeder — there is no endpoint that grants it, and no way for a
       user to escalate into it
-- [ ] Case-insensitive email lookup — use `citext`, not `lower()` at every call site
-- [ ] `linkGoogleSub(userId, sub)` — called by `auth` on first Google login
-- [ ] Emit `user.created` from the seeder so `sharing` can bind pending
-      email-addressed grants without this module knowing shares exist
+- [x] Case-insensitive email lookup — use `citext`, not `lower()` at every call site
+- [x] `linkGoogleSub(userId, sub)` — called by `auth` on first Google login
+- [ ] ~~Emit `user.created` from the seeder~~ **Cut.** The seeder is its own
+      process, so an in-process event reaches nothing. `sharing` binds pending
+      grants at login, which covers every provisioning route including a
+      hand-written `INSERT`. See HANDOFF.md §3.13
 
 ## Provisioning — how users get created
 
@@ -65,7 +67,7 @@ by the seeder, no way to reach `/jobs` either.
 Local is the supported path and that is fine. What is not fine is leaving the
 production case undocumented, so:
 
-- [ ] `pnpm db:seed` (`prisma db seed`) is a standalone command and works
+- [x] `pnpm db:seed` (`prisma db seed`) is a standalone command and works
       against any `DATABASE_URL`. Production provisioning is running it
       deliberately, once, against the production database — not a side effect
       of deploying
@@ -83,31 +85,31 @@ production case undocumented, so:
       and is the intended way to add a user to a running environment
 
 ### Responsibilities
-- [ ] `prisma/seed.ts`, wired via `"prisma": { "seed": "..." }` in
+- [x] `prisma/seed.ts`, wired via `"prisma": { "seed": "..." }` in
       `apps/api/package.json`
-- [ ] Read `SEED_USERS` from the environment and validate it with the same zod
+- [x] Read `SEED_USERS` from the environment and validate it with the same zod
       config schema `common` uses — a malformed seed fails loudly at boot, not
       halfway through the insert
-- [ ] Format: a JSON array, so names and passwords containing `:` or `,` are not
+- [x] Format: a JSON array, so names and passwords containing `:` or `,` are not
       a parsing problem
       ```
       SEED_USERS='[{"email":"ana@corp.com","password":"…","name":"Ana","admin":true}]'
       ```
       `admin` is optional and defaults to false
-- [ ] Hash each password with the **same** argon2id parameters `auth` uses.
+- [x] Hash each password with the **same** argon2id parameters `auth` uses.
       Import the helper rather than re-declaring the parameters — divergence
       here means seeded users cannot log in, and the failure looks like a wrong
       password
-- [ ] **The helper must be a plain, decorator-free module** — put it in
+- [x] **The helper must be a plain, decorator-free module** — put it in
       `auth/password.ts` as exported functions, not on an `@Injectable()`
       service. The `AuthService` can then wrap the same helper for DI.
       See the strip-safe zone below for why, and for the three other rules that
       come with it
-- [ ] **Idempotent upsert by email.** Re-running the seed must be safe
-- [ ] Never overwrite an existing `password_hash` unless `SEED_FORCE_RESET=true`.
+- [x] **Idempotent upsert by email.** Re-running the seed must be safe
+- [x] Never overwrite an existing `password_hash` unless `SEED_FORCE_RESET=true`.
       A re-run after a password change must not silently reset it
-- [ ] Emit `user.created` per newly inserted row
-- [ ] Log one line per user with the email and whether it was created, updated,
+- [ ] ~~Emit `user.created` per newly inserted row~~ — see above
+- [x] Log one line per user with the email and whether it was created, updated,
       or skipped. Never log the password or the hash
 
 ### The strip-safe zone — what `prisma/seed.ts` may import
@@ -137,16 +139,16 @@ the seed fails even without a decorator on it.
 
 So the rule is a small, explicitly-listed set of leaf modules:
 
-- [ ] **`auth/password.ts`** — argon2id hash/verify. No decorators, no enums, no
+- [x] **`auth/password.ts`** — argon2id hash/verify. No decorators, no enums, no
       parameter properties, and **no relative imports at all**. Bare specifiers
       (`@node-rs/argon2`) resolve normally and are fine
-- [ ] **`common/config/seed-users.schema.ts`** — the zod schema for
+- [x] **`common/config/seed-users.schema.ts`** — the zod schema for
       `SEED_USERS`, under the same rules. It must be a leaf: importing it from
       `common`'s Nest config module is fine, but it may not import back into it.
       An earlier revision said the seeder should reuse "the same zod config
       schema `common` uses" without noticing that `common`'s config *module* is
       a Nest provider and would take the seed down with it
-- [ ] `prisma/seed.ts` imports those two with **explicit `.ts` extensions**, and
+- [x] `prisma/seed.ts` imports those two with **explicit `.ts` extensions**, and
       is the only file in the package that does. It is excluded from
       `tsconfig.json` and typechecked by `tsconfig.seed.json`, which sets
       `allowImportingTsExtensions` + `noEmit` so `nest build` never sees it
@@ -160,10 +162,12 @@ So the rule is a small, explicitly-listed set of leaf modules:
       option is not rediscovered under pressure
 
 ### Manual `INSERT INTO` is supported, with one caveat
-An operator inserting a row by hand is a legitimate path, but raw SQL emits no
-`user.created` event, so pending share grants for that email would never bind.
-This is why `sharing` also binds pending grants at login time — see
-`sharing/TODO.md`. The event is a fast path; login is the guarantee.
+An operator inserting a row by hand is a legitimate path and needs no special
+handling, because there is only one binding mechanism to begin with: `sharing`
+claims pending grants at login. The `user.created` event that used to be
+described here as a "fast path" was removed once it became clear the seeder runs
+in a separate process and could never have delivered it — see
+`sharing/TODO.md` and HANDOFF.md §3.13.
 
 ## Invariants
 - Email comparison is case-insensitive and NFC-normalized everywhere.

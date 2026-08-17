@@ -8,16 +8,24 @@ import { z } from 'zod';
  * declares its own shape.
  *
  * Emitters and listeners, so the wiring is greppable in one place:
- *   user.created        seeder → sharing
- *   user.authenticated  auth   → sharing
- *   node.deleted        nodes  → sharing
+ *   user.authenticated  auth  → sharing
+ *   node.deleted        nodes → sharing
+ *
+ * ## `user.created` was specified and does not exist
+ *
+ * It was to be the fast path for binding pending share grants, emitted by the
+ * seeder, with login-time claiming as the guarantee behind it. It cannot work:
+ * `prisma db seed` spawns `node prisma/seed.ts` as its **own process**, while
+ * the bus and its listener live inside the long-running API. An in-process
+ * emitter has nothing to deliver to.
+ *
+ * The other provisioning route — a hand-written `INSERT` — emits nothing
+ * either, and always did. So the event had no reachable emitter at all, and
+ * login-time claiming is not the guarantee behind the mechanism; it is the
+ * mechanism. Removed rather than left as a definition nobody can fire.
+ *
+ * See HANDOFF.md §3.13.
  */
-
-export const UserCreatedSchema = z.strictObject({
-  userId: z.uuid(),
-  email: z.email(),
-});
-export type UserCreated = z.infer<typeof UserCreatedSchema>;
 
 export const UserAuthenticatedSchema = z.strictObject({
   userId: z.uuid(),
@@ -38,7 +46,6 @@ export const NodeDeletedSchema = z.strictObject({
 export type NodeDeleted = z.infer<typeof NodeDeletedSchema>;
 
 export const EVENT_SCHEMAS = {
-  'user.created': UserCreatedSchema,
   'user.authenticated': UserAuthenticatedSchema,
   'node.deleted': NodeDeletedSchema,
 } as const;

@@ -86,7 +86,7 @@ tell whether a case is missing.
 
 ### `P0` is deliberately rare
 
-**76 of 534.** An earlier revision had 332, which is not a prioritisation — if
+**80 of 548.** An earlier revision had 332, which is not a prioritisation — if
 two thirds of the suite blocks a module, nothing does. A row earns `P0` only if
 its failure is one of:
 
@@ -176,11 +176,21 @@ no idea how much is missing. So the registry drives the report:
       pinned by `src/registry/scan.spec.ts`
 - [x] Rows marked `RETIRED` keep their number but leave the `declared` count.
       The row stays so the ID is never reused; the requirement is gone
-- [x] Result: run #1 has ~0 green and **534 red** — one per live declaration.
+- [x] Result: run #1 has ~0 green and **548 red** — one per live declaration.
       Progress is `implemented / declared` and `green / declared`, both real
       numbers rather than a percentage of whatever tests happen to exist
 - [x] An implementation whose ID is not declared also fails the gate. Tests do
       not appear from nowhere
+- [ ] **Known hole: a test with *no* id at all is invisible to the gate.** The
+      rule above catches a wrong id, not a missing one — a spec file whose
+      titles carry no `AREA-MODULE-NNN` simply contributes nothing and nothing
+      complains. Found by writing thirteen such tests for the placeholder data
+      layer and noticing the `implemented` count had not moved. They are
+      declared now (`WEB-SHARED-030..042`), but the gap is real. The fix is to
+      flag any `it(...)` under `suites/**` whose title contains no declared id;
+      the reason it is not done yet is that the scanner would first have to
+      tell a test title from a `describe` block, which it currently does not
+      need to
 - [ ] The gate is the only place `it.todo` is acceptable. Everywhere else, an
       unfinished test fails
 - [ ] **CI gates on `newly failing`, never on `green == declared`.** The suite
@@ -213,7 +223,7 @@ runs/
   "durationMs": 48213,
   "git": { "sha": "a1b2c3d", "branch": "main", "dirty": false },
   "projects": ["contract", "api-unit", "api-integration", "web-unit"],
-  "declared": 534,
+  "declared": 548,
   "implemented": 37,
   "totals": { "passed": 31, "failed": 6, "skipped": 0 },
   "failedIds": ["API-NODES-011", "API-ACCESS-004"]

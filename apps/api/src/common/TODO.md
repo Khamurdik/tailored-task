@@ -36,41 +36,54 @@ them. If a helper needs a domain type, it belongs in that domain module.
 This module owns the bus, because every other candidate is a domain module and
 would drag its concerns into the layer below it.
 
-- [ ] A typed emitter over `@nestjs/event-emitter`
-- [ ] The payload contract lives in `packages/shared` so both sides of every
+- [x] A typed emitter. **Built on a plain `Map`, not `@nestjs/event-emitter`** —
+      that package is not installed, and adding a dependency for a bus whose
+      survival is still an open question is paying up front for a subsystem
+      that may be deleted. What it buys over 40 lines is `@OnEvent()`
+      decorators, wildcards, and namespacing; two events need none of them.
+      Nothing outside `EventBus` knows what it is built on, so swapping the
+      internals later touches one file
+- [x] The payload contract lives in `packages/shared` so both sides of every
       listener compile against one definition:
       ```ts
-      'user.created'       { userId, email }
       'user.authenticated' { userId, email }
       'node.deleted'       { rootId, nodeIds }
       ```
-- [ ] Emitters and listeners, so the wiring is greppable in one place:
-      `user.created` — seeder → `sharing` · `user.authenticated` — `auth` →
-      `sharing` · `node.deleted` — `nodes` → `sharing`
-- [ ] Listener failures are logged and swallowed. An event handler must never
+- [x] Emitters and listeners, so the wiring is greppable in one place:
+      `user.authenticated` — `auth` → `sharing` · `node.deleted` — `nodes` →
+      `sharing`
+- [x] Listener failures are logged and swallowed. An event handler must never
       fail the request that emitted it
+- [ ] ~~`user.created` — seeder → `sharing`~~ **Removed, not deferred.** The
+      seeder is a separate process (`prisma db seed` spawns
+      `node prisma/seed.ts`); the bus and its listener are inside the API. An
+      in-process emitter cannot cross that, so the fast path could never have
+      fired — and the other provisioning route, a hand-written `INSERT`, emits
+      nothing either. The event had no reachable emitter. Login-time claiming
+      in `sharing` is not the guarantee behind the mechanism, it *is* the
+      mechanism. See HANDOFF.md §3.13
 
 ## Responsibilities
-- [ ] Zod config schema; **crash at boot** on a missing var with a readable message
-  - [ ] `SEED_USERS` parses as a JSON array of `{ email, password, name }` and
+- [x] Zod config schema; **crash at boot** on a missing var with a readable message
+  - [x] `SEED_USERS` parses as a JSON array of `{ email, password, name }` and
         is validated by the same schema the seeder uses
-  - [ ] `GOOGLE_CLIENT_ID` is optional — a checkout without Google credentials
+  - [x] `GOOGLE_CLIENT_ID` is optional — a checkout without Google credentials
         must still boot and serve password login
-  - [ ] `UPLOAD_FILE_POLICY` is `'pdf-only' | 'all-files'`, **defaulting to
+  - [x] `UPLOAD_FILE_POLICY` is `'pdf-only' | 'all-files'`, **defaulting to
         `pdf-only`**, so an unconfigured deployment is the restrictive one
-  - [ ] No cookie secret and no CSRF secret. This API sets no cookies
-- [ ] `PrismaService` with `onModuleInit` connect and graceful shutdown hook
-- [ ] Global exception filter mapping `P2002 → 409 NAME_CONFLICT` (carrying
+  - [x] No cookie secret and no CSRF secret. This API sets no cookies
+- [x] `PrismaService` with `onModuleInit` connect and graceful shutdown hook
+- [x] Global exception filter mapping `P2002 → 409 NAME_CONFLICT` (carrying
       `suggestedName`) and `P2025 → 404 NOT_FOUND`
-- [ ] Error envelope `{ code, message, details? }` — codes live in
+- [x] Error envelope `{ code, message, details? }` — codes live in
       `packages/shared` so the client can switch on them
-- [ ] Opaque base64url keyset cursor over `(type, name, id)`
-- [ ] `normalizeName`: NFC normalize, trim, collapse whitespace
-- [ ] `sanitizeName`: strip `../`, null bytes, path separators, Unicode
+- [x] Opaque base64url keyset cursor over `(type, name, id)`
+- [x] `normalizeName`: NFC normalize, trim, collapse whitespace
+- [x] `sanitizeName`: strip `../`, null bytes, path separators, Unicode
       bidi-override chars (`U+202A`–`U+202E`), cap at 255
-- [ ] `suggestConflictName('a.pdf', taken) → 'a (1).pdf'` — suffix goes before
+- [x] `suggestConflictName('a.pdf', taken) → 'a (1).pdf'` — suffix goes before
       the extension, and an existing `(n)` increments rather than nesting
-- [ ] Health module: `/health` returns `{ status: 'ok' }` with **no I/O**
+- [x] Health module: `/health` returns `{ status: 'ok' }` with **no I/O**
 
 ## Invariants
 - `/health` must never touch the database. App Runner polls it every ~10s; a

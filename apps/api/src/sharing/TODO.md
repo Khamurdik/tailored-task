@@ -35,14 +35,19 @@ otherwise L2 would depend on L3.
 - [ ] User grant: by email. If no account exists yet, store `principal_email`
       and bind when that user is provisioned. Without this, "share with a
       colleague" only works for people an operator has already seeded.
-- [ ] **Binding a pending grant — two triggers, not one.** There is no
-      registration, so users appear via the seeder or a manual `INSERT`:
-  - [ ] Listener on `user.created` (emitted by the seeder) — the fast path
-  - [ ] Claim on successful login, matching `principal_email` to the actor's
-        email — the guarantee. A row inserted by raw SQL emits no event, so the
-        listener alone would leave those grants pending forever
-  - [ ] Both go through one `claimPendingGrants(userId, email)` method, so the
-        two paths cannot drift
+- [ ] **Binding a pending grant — one trigger.** Claim on successful login,
+      matching `principal_email` to the actor's email, through a single
+      `claimPendingGrants(userId, email)` method.
+  - [ ] It must be idempotent: it runs on *every* login, not just the first
+  - [ ] An earlier revision specified two triggers, with a `user.created`
+        listener as a fast path and login as the guarantee. The fast path was
+        removed once it turned out the seeder is a separate process from the
+        API and an in-process event could never reach this listener — and a
+        hand-written `INSERT` emits nothing either. There was never a second
+        path to drift from. See HANDOFF.md §3.13
+  - [ ] The cost is honest and worth stating: a grant addressed to someone who
+        has not logged in since being provisioned stays pending until they do.
+        Nothing is lost, and nothing is visible to them in the meantime
 - [ ] `GET /nodes/:id/shares` — grants on this node **and** inherited ones,
       visibly distinguished, so the owner can see why something is exposed
 - [ ] `DELETE /shares/:id` — sets `revoked_at`; effective immediately
@@ -73,9 +78,10 @@ State this in the README — reviewers poke at exactly this.
 - [ ] **Scoping**: a grant on folder B, then request sibling folder C's id with
       B's token → 404 (not 403, not 200)
 - [ ] Cascade delete of a parent revokes grants on descendants
-- [ ] Invite an email with no user row, seed that user, grant becomes active
+- [ ] Invite an email with no user row, seed that user, then log in — the grant
+      becomes active at login, not at seed time
 - [ ] Invite an email with no user row, insert that user with **raw SQL**, then
-      log in — the grant binds on login even though no event fired
+      log in — the grant binds identically, because there is only one path
 - [ ] The stored token is not the token that was returned
 
 ## Done when

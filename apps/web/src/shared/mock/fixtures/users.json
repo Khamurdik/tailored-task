@@ -1,0 +1,16 @@
+[
+  {
+    "id": "00000000-0000-4000-8000-0000000000a1",
+    "email": "ana@example.com",
+    "name": "Ana Ruiz",
+    "isAdmin": true,
+    "password": "change-me-now"
+  },
+  {
+    "id": "00000000-0000-4000-8000-0000000000a2",
+    "email": "bo@example.com",
+    "name": "Bo Lindqvist",
+    "isAdmin": false,
+    "password": "change-me-too"
+  }
+]

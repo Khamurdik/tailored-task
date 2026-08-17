@@ -34,6 +34,7 @@ in seven features at once.
 | WEB-SHARED-018 | A non-401 error is never retried by the refresh path | unit | P1 |
 | WEB-SHARED-028 | Two contexts hitting 401 together produce one refresh between them, and neither is logged out | security | P0 |
 | WEB-SHARED-029 | A waiter that acquires the refresh lock second re-reads the rotated pair instead of refreshing again | security | P1 |
+| WEB-SHARED-043 | An anonymous share visitor who gets a 401 is never sent to the login page | security | P1 |
 
 ### Turning failures into something a user can act on
 
@@ -47,6 +48,28 @@ in seven features at once.
 | WEB-SHARED-023 | A 500 body that is not the error envelope still produces an `AppError` | unit | P1 |
 | WEB-SHARED-024 | No user-facing message contains a stack trace or a raw server string | security | P1 |
 
+### The placeholder data layer
+
+Dev infrastructure, declared like everything else. It is the thing seven feature
+folders will be built against before the API exists, so a fault here is a fault
+in all seven — the same argument that opens this file.
+
+| ID | Behaviour | Kind | Pri |
+| --- | --- | --- | --- |
+| WEB-SHARED-030 | The mock serves a login and then an authenticated read through a real axios instance | unit | P1 |
+| WEB-SHARED-031 | Every bad login returns one indistinguishable body | security | P1 |
+| WEB-SHARED-032 | A share token reads its own subtree and 404s on a sibling, with the same body as a missing id | security | P0 |
+| WEB-SHARED-033 | A share visitor's breadcrumbs stop at the share root | security | P0 |
+| WEB-SHARED-034 | Revoked, expired and unknown links are byte-identical | security | P0 |
+| WEB-SHARED-035 | A 16-character short code resolves to the same share as its token | unit | P1 |
+| WEB-SHARED-036 | Mutations persist for the session and a name conflict returns a usable `suggestedName` | unit | P1 |
+| WEB-SHARED-037 | Deleting a node cascades and revokes the grants underneath it | security | P1 |
+| WEB-SHARED-038 | Moving a folder beneath its own descendant is rejected | unit | P1 |
+| WEB-SHARED-039 | Upload size and content type come from the bytes, not the client's claim | security | P1 |
+| WEB-SHARED-040 | Non-PDF bytes are rejected even when the client declared a PDF | security | P1 |
+| WEB-SHARED-041 | Paging uses an opaque cursor and repeats no row across a boundary | unit | P1 |
+| WEB-SHARED-042 | Soft-deleted fixtures never appear in a listing | unit | P1 |
+
 ### Caching and freshness
 
 | ID | Behaviour | Kind | Pri |
@@ -57,3 +80,15 @@ in seven features at once.
 | WEB-SHARED-026 | Logging out empties the cache so the next user sees nothing stale | security | P1 |
 | WEB-SHARED-009 | A malformed stored token reads as logged-out, not as an error | unit | P1 |
 | WEB-SHARED-027 | A response failing schema validation is surfaced as an error, not rendered | security | P1 |
+| WEB-SHARED-044 | A share view's query keys are namespaced by token and never collide with an owner's | security | P0 |
+
+- WEB-SHARED-030..042 cover the mock rather than the product, and they are
+  declared anyway. It is what seven feature folders will be built against before
+  the API exists, so a fault in it is a fault in all seven — and an undeclared
+  test is invisible to the coverage gate, which is the next note.
+- WEB-SHARED-043 is the refresh path seen from the other side. A visitor with
+  no session has nothing to refresh, and redirecting them to a login page they
+  have no business seeing is the bug.
+- WEB-SHARED-044 is `P0` and structural rather than behavioural: it asserts the
+  key factory cannot produce a colliding key, which is the only enforcement the
+  namespacing rule has.

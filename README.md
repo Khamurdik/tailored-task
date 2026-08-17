@@ -8,7 +8,9 @@ document that describes the system as a whole. Everything else is scoped to a
 single module on purpose.
 
 Picking this up cold? [`HANDOFF.md`](HANDOFF.md) carries the decision log, the
-version research, and the list of questions still open.
+version research, and the list of questions still open. To run it, deploy it,
+or provision a user, go to [`DEPLOYMENT.md`](DEPLOYMENT.md) — including its §8,
+which is an honest list of what does not work yet.
 
 ## How to use these files
 
@@ -74,7 +76,7 @@ record the README deliverable asks for.
 | [`tests`](tests/TODO.md) | Every test in the system, declared before it is written. Mirrors the module tree. |
 
 No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
-test *requirements*; [`tests/`](tests/TODO.md) turns those into 534 addressable,
+test *requirements*; [`tests/`](tests/TODO.md) turns those into 548 addressable,
 traceable declarations, grouped by what the user is trying to do, and is where
 they are implemented. The first run is meant to be red — see
 [`tests/TODO.md`](tests/TODO.md) §4.

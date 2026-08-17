@@ -1,0 +1,41 @@
+# The local database, and the one the integration suite uses.
+#
+# One compose file rather than `testcontainers`: that would be a dependency and
+# a Docker-API integration for something six lines do, and rather than a Neon
+# branch, which needs credentials in CI and network on every run. This doubles
+# as the local dev database, so there is one Postgres to know about.
+#
+# Started by `tests/src/support/global-setup.ts` if it is not already running.
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: dataroom-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dataroom
+    ports:
+      # 5433 on the host, not 5432. A developer machine running this project is
+      # very likely already running a Postgres, and a port clash here surfaces
+      # as authentication errors against the wrong database rather than as a
+      # failure to start.
+      - '5433:5432'
+    healthcheck:
+      # `pg_isready` alone returns true while the server is still starting up
+      # its first-run initialisation, so the suite would connect and then fail.
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d dataroom']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      # The test database is disposable by design — a fresh one per run beats
+      # cleaning between tests. Keeping it in tmpfs makes that cheap and means
+      # nothing survives a reboot to be stale later.
+      #
+      # `/var/lib/postgresql`, NOT `/var/lib/postgresql/data`. Postgres 18
+      # changed the convention: the data now lives in a subdirectory of the
+      # mount so `pg_upgrade --link` does not have to cross a mount boundary.
+      # Mounting the old path makes the entrypoint find an "unused
+      # mount/volume", refuse to initialise, and exit 1 — which reads as a
+      # corrupt-data warning rather than as a misconfigured mount.
+      - /var/lib/postgresql

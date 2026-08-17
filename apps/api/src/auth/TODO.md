@@ -75,9 +75,10 @@ This system has no public signup. Accounts are provisioned out of band — see
 ### Events
 - [ ] Emit `user.authenticated` `{ userId, email }` after every successful
       login, password or Google. `sharing` uses it to bind pending
-      email-addressed grants for users who were inserted by hand and so never
-      produced a `user.created` event. Emitting rather than calling keeps this
-      module below `sharing` in the layer graph
+      email-addressed grants, and since `user.created` turned out to be
+      undeliverable — the seeder is a separate process — this is now the *only*
+      binding trigger rather than the fallback behind one. Emitting rather than
+      calling keeps this module below `sharing` in the layer graph
 
 ## Why no cookies
 

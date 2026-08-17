@@ -22,12 +22,12 @@ The HTTP client, the query-key factory, and the token store.
 Any feature folder. Dependencies point inward only.
 
 ## Responsibilities
-- [ ] Axios instance, `withCredentials: false` — this client sends no cookies
-- [ ] Request interceptor attaching `Authorization: Bearer <accessToken>` from
+- [x] Axios instance, `withCredentials: false` — this client sends no cookies
+- [x] Request interceptor attaching `Authorization: Bearer <accessToken>` from
       the token store
-- [ ] Response interceptor: 401 → `POST /auth/refresh` with the refresh token
+- [x] Response interceptor: 401 → `POST /auth/refresh` with the refresh token
       **in the JSON body** → store the rotated pair → retry once
-- [ ] **Single-flight refresh, across tabs — not just within one.** Concurrent
+- [x] **Single-flight refresh, across tabs — not just within one.** Concurrent
       401s must await one refresh call and then all retry. Firing one refresh
       per in-flight request rotates the token N times, and every rotation after
       the first is a replay of an already-rotated token — which the server
@@ -39,24 +39,24 @@ Any feature folder. Dependencies point inward only.
       and therefore one refresh token, so two tabs hitting 401 at the same
       moment each start their own "single" flight, and the second one replays.
       This is the same bug across a boundary that a per-tab guard cannot see.
-- [ ] Hold the refresh in a **`navigator.locks.request('auth-refresh', …)`**.
+- [x] Hold the refresh in a **`navigator.locks.request('auth-refresh', …)`**.
       Every tab queues on one named lock; the winner refreshes, the rest wake up
       after it and re-read the rotated pair from the token store rather than
       refreshing again. All requests everywhere stall until it resolves, which
       is the intended behaviour
-- [ ] The waiters must re-check the store **inside** the lock before refreshing.
+- [x] The waiters must re-check the store **inside** the lock before refreshing.
       A tab that acquires the lock second and refreshes anyway is the exact
       replay this is meant to prevent — the lock serialises, it does not
       deduplicate
-- [ ] `navigator.locks` is unavailable on insecure non-localhost origins. Fall
+- [x] `navigator.locks` is unavailable on insecure non-localhost origins. Fall
       back to the per-tab promise there and accept the race; do not fall back to
       a `localStorage` mutex, which has no atomic compare-and-set
-- [ ] A failed refresh clears the token store once and redirects to login —
+- [x] A failed refresh clears the token store once and redirects to login —
       never loops
-- [ ] Attach `X-Share-Token` automatically when the route is a share route
-- [ ] Unwrap the `{ code, message, details }` envelope into a typed `AppError`
-- [ ] `retry: false` for 404 and 410 — do not hammer a gone resource
-- [ ] `refetchOnWindowFocus: true` globally. This is free pseudo-realtime and
+- [x] Attach `X-Share-Token` automatically when the route is a share route
+- [x] Unwrap the `{ code, message, details }` envelope into a typed `AppError`
+- [x] `retry: false` for 404 and 410 — do not hammer a gone resource
+- [x] `refetchOnWindowFocus: true` globally. This is free pseudo-realtime and
       solves most of the stale-tree problem without websockets.
 - [ ] Route-level error boundary rendering a real screen for 410 and 404
 
@@ -78,6 +78,23 @@ Any feature folder. Dependencies point inward only.
       and all ten succeed on retry
 - [ ] Two tabs hitting 401 at the same moment trigger **one** refresh between
       them, and neither is logged out
+
+## Implementation notes
+
+- [x] **Exactly one credential per request, never two.** A share route sends
+      `X-Share-Token` and no bearer; everything else sends the bearer and no
+      share token. The interceptor deletes both before setting one, so "both"
+      is unrepresentable rather than merely discouraged — a signed-in owner
+      opening someone else's share link is the case that would otherwise send
+      two and let the server pick.
+- [x] The "redirect to login" guard resets when a session is next **stored**,
+      not on a timer. A timer was the first attempt and is both racy and
+      untestable: the window has to outlive a burst but not the next genuine
+      expiry, and no value is right for both.
+- [x] A failed refresh clears the store **inside the lock**. Clearing in the
+      caller leaves a window where each queued waiter still sees the dead token,
+      decides it should refresh, and fires another doomed request — five
+      requests becoming five refresh calls and five redirects.
 
 ## Done when
 An expired share link produces a designed screen, not a spinner or a toast, and

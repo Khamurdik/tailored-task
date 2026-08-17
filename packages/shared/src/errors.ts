@@ -20,6 +20,10 @@ export const ErrorCodeSchema = z.enum([
   'RATE_LIMITED',
   'CONFLICT',
   'VALIDATION_FAILED',
+  // Every 500. The client cannot act on it beyond retrying, but the union has
+  // to name it — otherwise the one response shape that escapes the contract is
+  // the one sent when something has already gone wrong.
+  'INTERNAL',
 ]);
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;

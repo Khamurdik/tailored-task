@@ -23,42 +23,46 @@ Read in this order:
 2. [`README.md`](README.md) — module index and build order
 3. [`PROJECT-ANALYSIS.md`](PROJECT-ANALYSIS.md) — independent critique, including
    the contradictions still open
-4. [`docs/TOOLCHAIN.md`](docs/TOOLCHAIN.md) — every version pin and why
-5. [`tests/TODO.md`](tests/TODO.md) — how testing works here
+4. [`DEPLOYMENT.md`](DEPLOYMENT.md) — how to run it, the hosted target, and the
+   constraints that bite. §8 lists what is not true yet
+5. [`docs/TOOLCHAIN.md`](docs/TOOLCHAIN.md) — every version pin and why
+6. [`tests/TODO.md`](tests/TODO.md) — how testing works here
 
 ---
 
 ## 2. Current state
 
-**102 files, ~5,000 lines of markdown, and the first ~1,200 lines of source.**
+**138 files, ~5,500 lines of markdown, and ~3,400 lines of TypeScript across 49 files.**
 
-Phase 1 has landed: the wire contract and the coverage gate. Everything under
-`apps/` is still specification only.
+Phases 0–2 have landed. **The API boots, connects to Postgres, and serves
+`/health`.** `apps/web` is untouched.
 
 | Exists | Does not exist |
 | --- | --- |
-| Module specs (`*/TODO.md`) for all 19 modules | Any `.ts` under `apps/*/src` |
-| pnpm workspace, 5 packages, all configs | `prisma/schema.prisma` models |
-| `pnpm-lock.yaml` — installed and resolved | Any migration |
-| 534 declared tests in 91 groups, 76 of them `P0` | Any API or web source |
-| Prisma datasource + generator block, `prisma validate` clean | The test harness (`src/support/`) |
-| **`packages/shared` — the full contract, building to CJS + ESM** | The run-log reporter and `pnpm history` |
-| **`tests/src/registry` + the coverage gate — run #1 is red, 534 of them** | |
-| **`suites/contract` — 12 of 12 green** | |
+| Module specs (`*/TODO.md`) for all 19 modules | Any `.ts` under `apps/web/src` |
+| pnpm workspace, 5 packages, all configs | `nodes`, `auth`, `access`, `sharing`, `links`, `files`, `jobs` |
+| 548 declared tests in 92 groups, 80 of them `P0` | `shares`, `refresh_tokens`, `job_runs` tables |
+| **`packages/shared` — the full contract, CJS + ESM** | The integration harness (`tests/src/support/`) |
+| **`tests/src/registry` + the coverage gate — 77 of 548 implemented** | The run-log reporter and `pnpm history` |
+| **`common` — config, Prisma, errors, cursor, names, bus, health** | |
+| **`storage` — port, S3 adapter, in-memory adapter** | |
+| **`users` — repository, service, seeder, `users` table, one migration** | |
+| **`docker-compose.test.yml` — Postgres 18, verified** | |
+| **`apps/web/shared` — client, token store, refresh lock, errors, query keys** | |
+| **`apps/web/shared/mock` — the placeholder data layer** | |
 
-**The toolchain has now been installed and run** (2026-08-16, Node 26.7.0, pnpm
-11.22.0). That replaces the previous "verified only against the npm registry"
-position and it immediately paid for itself — see §4. `pnpm -r lint` is clean;
-`pnpm -r typecheck` fails only with `TS18003: No inputs were found` in the three
-source-free packages, which is the correct result for a repo with no source and
-will resolve itself with the first `.ts` file.
+Verified by running, not by reading: the API boots and answers `/health` with
+no database query and `/health/deep` with one; an unknown route returns
+`{"code":"NOT_FOUND"}` rather than a Nest default; no response carries
+`Set-Cookie`; CORS echoes only the configured origin; the seed provisions two
+users and reports `unchanged` on a second run.
 
 ### Layout
 ```
 apps/api/src/<module>/TODO.md     12 backend modules, L0–L4
 apps/web/src/{shared,features/*}  7 frontend modules
 packages/shared/                  the zod wire contract
-tests/                            all 534 declarations, mirrors the module tree
+tests/                            all 548 declarations, mirrors the module tree
 docs/                             ARCHITECTURE, TOOLCHAIN
 ```
 
@@ -140,9 +144,9 @@ Verified against the npm registry on 2026-08-16.
 
 ### 3.5 Knock-on effects of removing registration
 - `sharing` previously bound pending email grants on `user.registered`, an event
-  that can no longer fire. It now binds on **both** `user.created` (fast path)
-  and successful login (the guarantee) — because a hand-written `INSERT` emits
-  no event, and those grants would otherwise stay pending forever.
+  that can no longer fire. It was respecified to bind on **both** `user.created`
+  (fast path) and successful login (the guarantee). §3.13 later removed the
+  first of those as undeliverable, leaving login as the only trigger.
 - `auth` emits `user.authenticated` so `sharing` can listen without `auth`
   depending upward on L3.
 
@@ -246,7 +250,7 @@ is what makes deferring it safe.
   importing `links` for minting — a same-layer L3 import. Fixed by moving
   `ShareCodec` down into `access`, beside the two hash columns it fills. Both
   modules now import downward and neither imports the other.
-- Declarations grew by 23 to **534**, `P0` by 10 to **76**. `links` now has the
+- Declarations grew by 23 to **534** — **533** live once §3.13 retired one — and `P0` by 10 to **76**. `links` now has the
   largest `P0` group in the repo, which is correct: it is the only module whose
   entire input comes from someone who was never authenticated.
 
@@ -255,7 +259,7 @@ is what makes deferring it safe.
   runner and no test dependency.
 - Module `TODO.md` **Tests** sections remain as *requirements*, each pointing at
   its mirrored suite.
-- **534 declarations in 91 groups**, declared in markdown tables that are both
+- **548 declarations in 92 groups**, declared in markdown tables that are both
   the human doc and the machine registry.
 - Driven by, in priority order: security checks → user stories → invariants →
   contracts. Explicitly not by internal structure.
@@ -267,6 +271,97 @@ is what makes deferring it safe.
   writes `runs/latest.json`.
 
 ---
+
+### 3.13 `user.created` cannot exist — the seeder is a different process
+- Found while writing `prisma/seed.ts`. The event was specified as the fast path
+  for binding pending share grants, with login-time claiming as "the guarantee"
+  behind it.
+- **`prisma db seed` spawns `node prisma/seed.ts` as its own process.** The bus
+  and its only listener live inside the long-running API. An in-process emitter
+  has nothing to deliver to, so the fast path could never have fired even once.
+- The other provisioning route, a hand-written `INSERT`, emits nothing either —
+  and always didn't; that was already written down as the reason login-time
+  claiming existed. So the event had **no reachable emitter at all**.
+- Resolution: `user.created` is **removed**, not deferred. Login-time claiming is
+  not the guarantee behind the mechanism; it is the mechanism. `sharing` now
+  specifies one trigger with an idempotency requirement, instead of two triggers
+  with a don't-let-them-drift requirement.
+- The bus survives with two events, both genuinely in-process:
+  `user.authenticated` (auth → sharing) and `node.deleted` (nodes → sharing).
+  That also answers §5.2 more sharply than expected: the question was whether
+  the bus earned its keep given one emitter and one listener, and the answer is
+  that the emitter in question was imaginary.
+- `API-SHARING-011` is **retired**, keeping its number. `API-SHARING-013` was
+  reworded from "both binding paths agree" to "claiming is idempotent", since
+  there is now one path that runs on every login.
+- Cost, stated plainly: a grant addressed to someone who has not logged in since
+  being provisioned stays pending until they do. Nothing is lost and nothing is
+  visible to them meanwhile.
+
+### 3.14 The web app gets a placeholder data layer, at the axios adapter
+- Asked for as "placeholder JSONs on the front-end data layer side". The
+  fixtures are the easy part; the only real decision was **which layer stops
+  talking to a real thing**, because everything below that layer stops being
+  exercised.
+- **Chosen seam: the axios `adapter`.** It is the lowest point still inside the
+  front end, so the request interceptor, the 401-refresh path with its
+  `navigator.locks` single-flight, response schema parsing, and react-query all
+  keep running for real. Faking at the `api`-object or hook level would leave
+  the refresh path unrun until the API exists — and that path holds both of
+  `web/shared`'s `P0` declarations, whose failure mode only appears under a
+  burst of parallel requests.
+- **No new dependency.** MSW is the usual answer and a good tool, but it is a
+  dependency plus a service worker, and this app has exactly one HTTP client
+  which is already ours. Static JSON in `public/` was rejected outright: it is
+  read-only, and create/rename/move/delete/upload/share is most of the product.
+- **Fixtures are parsed through the `packages/shared` schemas at load**, and
+  handler-built responses are parsed again in dev. A placeholder that drifts
+  from the contract teaches the UI a shape the server will never send, and the
+  divergence surfaces months later as "it worked with mocks".
+- Referential integrity is checked too — a bad `parentId`, an owner who does
+  not exist, or a `depth` that disagrees with the ancestor walk all fail at
+  load rather than rendering an empty explorer.
+- The mock keeps the three semantics that make the difference between a useful
+  fake and a misleading one: denial is 404 with one indistinguishable body,
+  share tokens scope to their subtree, and upload size/type come from the bytes
+  rather than the client's claim. Ancestry is computed from `parentId`, so it
+  cannot teach the UI a `path` shape that may never exist.
+- `import.meta.env.PROD` overrides the flag, so the mock cannot ship on.
+- Three bugs it surfaced while being tested, all real: `compareChildren` never
+  returned 0 for an identical row, so the keyset cursor duplicated its boundary
+  row on every page; the adapter ignored axios's `validateStatus` instead of
+  behaving like a real adapter; and under jsdom, `data instanceof ArrayBuffer`
+  is false for a genuine cross-realm `ArrayBuffer`, so uploads silently stored
+  zero bytes and `/complete` rejected them as not-a-PDF.
+
+### 3.15 `web/shared` — the client, and what the refresh lock actually needs
+- Built against the placeholder data layer from §3.14, which is what made the
+  refresh path testable before any API existed. All 29 declarations in the suite
+  are green, including both `P0`s.
+- **One credential per request, never two.** The interceptor deletes both
+  headers and sets one. The case that motivates it is a signed-in owner opening
+  someone else's share link: send both and the server resolves whichever it
+  recognises, and the public page starts rendering owner-scoped data.
+- **A failed refresh clears the store inside the lock**, not in the caller.
+  Clearing outside leaves a window where every queued waiter still sees the dead
+  token, decides it should be the one to refresh, and fires another doomed
+  request — five requests becoming five refresh calls and five redirects.
+- **The "redirect once" guard resets when a session is next stored**, not on a
+  timer. The timer was the first attempt and `WEB-SHARED-005` caught it: the
+  window has to outlive a burst but not the next genuine expiry, and no value
+  is right for both.
+- Two environment facts worth not rediscovering, both handled in
+  `tests/src/support/web-setup.ts`. **jsdom has no `navigator.locks`**, so
+  without a polyfill the client silently takes its documented per-tab fallback
+  and `WEB-SHARED-028` would assert the weaker guarantee it exists to rule out.
+  And **`localStorage` is undefined under Node 26 + jsdom 30** — Node's own
+  experimental Web Storage global has no backing file and shadows jsdom's, with
+  the warning `localStorage is not available because --localstorage-file was
+  not provided`. Every token test would have passed by asserting nothing.
+- `WEB-SHARED-008` (localStorage in one module) initially failed on two files
+  that only *mention* it in prose explaining why they avoid it. Comments are not
+  code — the same lesson the registry scanner learned from the other direction
+  in §4.
 
 ## 4. Verified facts worth not re-checking
 
@@ -347,6 +442,36 @@ things that neither the registry nor the install could have:
   pins the behaviour — including that an id mentioned only in a comment does
   **not** count as implemented.
 
+### Found by making the API boot (2026-08-17)
+
+- **`ValidationPipe` is a `class-validator` front end.** Nest's built-in pipe
+  throws `The "class-validator" package is missing` at boot, and that package is
+  deliberately absent — this project validates with zod schemas from
+  `packages/shared`. Use `ZodValidationPipe` from `nestjs-zod`, which is already
+  a dependency and is presumably why it is one.
+- **`@node-rs/argon2` exports `Algorithm` as an ambient const enum.** Reading it
+  is a `TS2748` under `isolatedModules`, and — the part that matters — a const
+  enum member is inlined by the compiler, of which there is none when Node
+  strips types to run `prisma/seed.ts`. The strip-safe zone's "no `enum`" rule
+  is usually read as "do not write one"; importing one is the same hazard from
+  the other side. argon2id is the library's default, verified by execution, so
+  the option is simply not passed.
+- **Postgres 18 moved the data directory.** The container now expects a mount at
+  `/var/lib/postgresql`, not `/var/lib/postgresql/data`; mounting the old path
+  makes the entrypoint report an "unused mount/volume" and exit 1, which reads
+  as a corrupt-data warning rather than a misconfigured mount.
+- **`prisma migrate dev` does not always seed.** It runs the seed when it
+  creates or resets the database and skips it when it only applies a migration
+  to an existing one. `pnpm db:seed` is the reliable step, and it is idempotent.
+- **Vitest does not read tsconfig `paths`.** The `@api/*` alias had to be
+  repeated in `vitest.config.ts`; until it was, the editor resolved imports the
+  runner could not.
+- The `apps/api` eslint config now disables `consistent-type-imports`. The rule
+  is right in general and wrong here in a way that fails at runtime: Nest reads
+  constructor dependencies from `design:paramtypes`, an `import type` is erased
+  before that metadata is emitted, and `--fix` applies the change automatically.
+  A lint tidy-up would become "Nest can't resolve dependencies of X".
+
 Two smaller ones: `zod` had to be added to `@dataroom/tests` (the contract suite
 imports it directly to check that schemas are strict, and it was only ever a
 transitive dependency), and `tests/tsconfig.json` gained
@@ -367,12 +492,13 @@ see §3.7–§3.9 and the resolutions noted inline in the module specs.
    collation notes in `nodes/TODO.md` §Storage. Pick the strategy when `nodes`
    is built, and write the DDL and the index list in that same change.
 
-2. **Does the event bus earn its keep?** `common` now owns it (see
-   `common/TODO.md`), which resolves the ownership question — but `user.created`
-   still has exactly one emitter (the seeder) and one listener, and login-time
-   claiming is already declared as the guarantee. If the fast path is not worth a
-   subsystem, delete the event and keep the login-time claim. Decide when
-   `sharing` is written, not before.
+2. ~~**Does the event bus earn its keep?**~~ **Answered, and not the way the
+   question assumed.** `user.created` was deleted because it could never have
+   fired — the seeder is a separate process from the bus (§3.13). The bus keeps
+   `user.authenticated` and `node.deleted`, both in-process and both real. It is
+   also now a 90-line `Map` rather than `@nestjs/event-emitter`, so if it turns
+   out not to be worth it after `sharing` is written, deleting it costs nothing
+   and removes no dependency.
 
 3. **`pnpm -r typecheck` fails with `TS18003: No inputs were found`** in
    `apps/api` and `apps/web`, because they contain no source. `packages/shared`
@@ -398,7 +524,7 @@ see §3.7–§3.9 and the resolutions noted inline in the module specs.
   with no confirmation from an authenticated session. Out of scope for the
   assignment; a real deployment needs the confirmation step.
 - **Test distribution still leans to the web.** `access` has 14 declarations and
-  `web/explorer` has 80; web features hold 277 of 534. The `P0` set was rebuilt
+  `web/explorer` has 80; web features hold 292 of 548. The `P0` set was rebuilt
   to correct for it (76 rows, weighted to the API security core — see
   `tests/TODO.md` §2), but the raw declaration counts were left alone. They are
   not wrong, just unevenly deep.
