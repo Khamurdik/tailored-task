@@ -3,6 +3,9 @@
 How to run this system locally and how to put it somewhere. Kept current as
 modules land — if a step here is wrong, that is a bug in this file.
 
+For *what is built* rather than *how to run it*, see
+[`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md).
+
 **Status: 2026-08-17.** **The API boots, connects, and serves `/health`**, and
 **the web app builds, runs, and signs a user in with no backend at all** —
 `VITE_API_MODE=mock` answers every request from fixtures.

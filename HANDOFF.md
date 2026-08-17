@@ -18,7 +18,13 @@ it. It is a take-home engineering assignment; the prose in the specs addresses
 "the brief" and "reviewers", and the module docs deliberately double as the
 design-record deliverable.
 
+> **Picking up implementation?** Read
+> [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) first. It is the current
+> state of the code, the environment facts worth not rediscovering, and the next
+> steps. This file is the *why* behind the decisions; that one is the *where*.
+
 Read in this order:
+0. [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) — where the code is
 1. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the only whole-system document
 2. [`README.md`](README.md) — module index and build order
 3. [`PROJECT-ANALYSIS.md`](PROJECT-ANALYSIS.md) — independent critique, including

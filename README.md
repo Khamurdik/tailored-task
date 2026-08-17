@@ -7,10 +7,11 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first — it is the only
 document that describes the system as a whole. Everything else is scoped to a
 single module on purpose.
 
-Picking this up cold? [`HANDOFF.md`](HANDOFF.md) carries the decision log, the
-version research, and the list of questions still open. To run it, deploy it,
-or provision a user, go to [`DEPLOYMENT.md`](DEPLOYMENT.md) — including its §8,
-which is an honest list of what does not work yet.
+Picking this up cold? Start with
+[`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) — where the code is, what
+broke while writing it, and what to do next. [`HANDOFF.md`](HANDOFF.md) carries
+the decision log and the version research; [`DEPLOYMENT.md`](DEPLOYMENT.md) is
+how to run it, including its §8 list of what does not work yet.
 
 ## How to use these files
 
