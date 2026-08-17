@@ -19,12 +19,21 @@ it. It is a take-home engineering assignment; the prose in the specs addresses
 design-record deliverable.
 
 > **Picking up implementation?** Read
-> [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) first. It is the current
-> state of the code, the environment facts worth not rediscovering, and the next
-> steps. This file is the *why* behind the decisions; that one is the *where*.
+> [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) first — it is the
+> handoff for the sessions that *built* what this file designed, including the
+> five decisions taken during implementation and the list of what is deliberately
+> still missing. Then [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) for
+> the current state of the code.
+>
+> This file is the *why* behind the design and is still accurate. It is no longer
+> the whole story: several things it specifies were changed on contact, and each
+> is recorded in `HANDOFF-IMPLEMENTATION.md` §4.4 rather than silently diverged
+> from.
 
 Read in this order:
-0. [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) — where the code is
+0. [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) — what was built, and
+   what changed on contact
+0b. [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) — where the code is
 1. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the only whole-system document
 2. [`README.md`](README.md) — module index and build order
 3. [`PROJECT-ANALYSIS.md`](PROJECT-ANALYSIS.md) — independent critique, including

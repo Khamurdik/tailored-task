@@ -13,8 +13,8 @@ the only path that creates a user and it deserves real coverage.
 
 | ID | Behaviour | Kind | Pri |
 | --- | --- | --- | --- |
-| API-USERS-001 | `findByEmail` matches across upper and lower case | unit | P1 |
-| API-USERS-002 | `findByEmail` matches across NFC and NFD forms | unit | P1 |
+| API-USERS-001 | `findByEmail` matches across upper and lower case | integration | P1 |
+| API-USERS-002 | `findByEmail` matches across NFC and NFD forms | integration | P1 |
 
 ### Seeding
 
@@ -34,13 +34,30 @@ the only path that creates a user and it deserves real coverage.
 | API-USERS-009 | A re-seed never promotes an existing user to admin | security | P1 |
 | API-USERS-010 | Malformed `SEED_USERS` aborts the seed with a readable error and inserts nothing | integration | P1 |
 | API-USERS-011 | Seeder output contains no password and no hash | security | P1 |
-| API-USERS-012 | `user.created` is emitted once per newly inserted row and not on re-seed | integration | P1 |
+| API-USERS-012 | RETIRED — `user.created` is emitted once per newly inserted row. The event was removed: `prisma db seed` spawns its own process while the bus lives in the API, so an in-process emitter had nothing to deliver to and this could never have passed. Kept so the number is never reused. See HANDOFF.md §3.13 | integration | P1 |
 | API-USERS-013 | `google_sub` is unique — two users cannot claim one Google identity | integration | P1 |
 | API-USERS-014 | No HTTP route in the application creates a user row | security | P0 |
 | API-USERS-015 | `node prisma/seed.ts` runs to completion under Node's type stripping on the pinned version | integration | P0 |
 | API-USERS-016 | No module in the strip-safe zone uses a decorator, an enum, a parameter property, or an extensionless relative import | unit | P1 |
 
 ## Notes
+- **API-USERS-001 and 002 were declared `unit` and are `integration`.** Both are
+  about `citext` and NFC normalization at the column, and only a database has a
+  `citext` column — a unit test could assert nothing but that the application
+  passes a string through. The file-naming rule in `tests/TODO.md` §1 makes
+  `.unit.spec.ts` mean "no I/O", so the label decided which project would have
+  run them.
+- **API-USERS-012 is retired**, and it is the second declaration in this repo to
+  outlive the mechanism it described (`API-SHARING-011` was the first, for the
+  same reason). Both were written when `user.created` was believed to exist.
+  Retiring rather than deleting keeps the number unusable and the reason
+  findable.
+- The seeding tests **run `node prisma/seed.ts` as a subprocess** rather than
+  importing its functions. That is the point of them: the seeder executes under
+  Node's type stripping with no compiler, which is a different environment from
+  every other test here, and importing `upsert` would test the logic while
+  skipping the constraint that actually breaks. API-USERS-015 is that
+  environment asserted directly.
 - API-USERS-015 and API-USERS-016 pair the way 011/012 do in `jobs`: 015 catches
   the breakage, 016 says which of the four rules was broken. 016 is a static
   scan over the transitive imports of `prisma/seed.ts`, not a runtime test — and

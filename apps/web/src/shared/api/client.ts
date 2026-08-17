@@ -48,7 +48,17 @@ export function createApiClient(): AxiosInstance {
   const instance = axios.create({
     // Relative, so dev goes through Vite's proxy and production through the
     // Vercel rewrite. One base URL across environments.
-    baseURL: import.meta.env.VITE_API_URL ?? '/api',
+    /**
+     * A **blank** value counts as unset, not as an empty base URL.
+     *
+     * `??` only catches null and undefined, so `VITE_API_URL=` in an env file
+     * yields `''` — and every request then goes to the page's own origin, where
+     * the dev server answers a POST with a 404 and the UI reports "that item is
+     * not available" on the login screen. `.env` files spell "unset" as a blank
+     * line all the time; the API's own config has the same rule
+     * (`blankAsUndefined`), and the two should agree.
+     */
+    baseURL: blankToUndefined(import.meta.env.VITE_API_URL) ?? '/api',
 
     // No cookies, ever. There is no ambient credential in this system, which
     // is what removes CSRF as a category — and it is why CORS is
@@ -78,6 +88,10 @@ export function createApiClient(): AxiosInstance {
  * whichever it recognises first, which is how an owner's data ends up rendered
  * on a public page.
  */
+function blankToUndefined(value: string | undefined): string | undefined {
+  return value === undefined || value.trim() === '' ? undefined : value;
+}
+
 function attachCredential(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
   config.headers.delete('Authorization');
   config.headers.delete('X-Share-Token');

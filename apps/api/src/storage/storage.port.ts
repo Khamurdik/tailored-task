@@ -40,6 +40,23 @@ export interface StoragePort {
   /** Null for a missing key. Never throws for absence — absence is an answer. */
   head(key: string): Promise<ObjectHead | null>;
 
+  /**
+   * The first `maxBytes` of an object, or null if it does not exist.
+   *
+   * **A prefix read, not a `get`, and the difference is the whole point.**
+   * `files` needs five bytes at `/complete` to check that a PDF is a PDF — the
+   * case a client declaring `application/pdf` and uploading HTML exists for.
+   * A port method that returned a whole object would eventually be used to
+   * stream a 50 MiB file through the API, which is precisely what presigned
+   * URLs exist to avoid; bounding it in the signature means that use never
+   * becomes available.
+   *
+   * The returned buffer may be **shorter** than `maxBytes` — an object smaller
+   * than the range is not an error, and a caller comparing magic bytes has to
+   * treat "too short to match" as "does not match" rather than as a failure.
+   */
+  readPrefix(key: string, maxBytes: number): Promise<Buffer | null>;
+
   delete(key: string): Promise<void>;
   copy(from: string, to: string): Promise<void>;
 }

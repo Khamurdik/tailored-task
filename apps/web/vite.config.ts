@@ -27,6 +27,17 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        /**
+         * **Strip the prefix.** The API serves `/auth/login`, not
+         * `/api/auth/login`, so without this the default base URL — which *is*
+         * `/api` — proxies to a path that does not exist and every request 404s.
+         *
+         * It went unnoticed because a `.env.local` with
+         * `VITE_API_URL=http://localhost:3000` bypasses the proxy entirely, so
+         * the only person who hits it is one who followed the documented setup
+         * and left that line unset.
+         */
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },

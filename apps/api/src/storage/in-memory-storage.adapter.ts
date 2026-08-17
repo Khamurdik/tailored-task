@@ -59,6 +59,17 @@ export class InMemoryStorageAdapter implements StoragePort {
     );
   }
 
+  readPrefix(key: string, maxBytes: number): Promise<Buffer | null> {
+    const stored = this.objects.get(key);
+    if (stored === undefined) return Promise.resolve(null);
+
+    // `subarray` would alias the stored buffer, so a caller mutating the result
+    // would edit the object. The real adapter cannot alias anything; a fake that
+    // can is a fake that behaves differently under exactly the conditions
+    // nobody tests.
+    return Promise.resolve(Buffer.from(stored.body.subarray(0, maxBytes)));
+  }
+
   delete(key: string): Promise<void> {
     this.objects.delete(key);
     return Promise.resolve();

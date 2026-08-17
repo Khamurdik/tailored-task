@@ -35,6 +35,27 @@ export class RefreshTokenRepository {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  /**
+   * Deletes tokens past expiry and ones revoked long enough ago.
+   *
+   * Revoked rows are not dropped the moment they are revoked, and the delay is
+   * load-bearing: a row is what lets a replay be **detected** rather than merely
+   * failing to match. Delete it immediately and a presented rotated token
+   * becomes `unknown` instead of `reused`, so the family is never killed and the
+   * one signal that someone else holds a token is gone.
+   */
+  async purgeExpired(input: { now: Date; revokedBefore: Date }): Promise<number> {
+    const result = await this.prisma.refreshToken.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: input.now } },
+          { revokedAt: { not: null, lt: input.revokedBefore } },
+        ],
+      },
+    });
+    return result.count;
+  }
+
   async issue(userId: string, ttlMs: number, familyId?: string): Promise<IssuedRefreshToken> {
     const token = randomBytes(32).toString('base64url');
     const family = familyId ?? randomUUID();

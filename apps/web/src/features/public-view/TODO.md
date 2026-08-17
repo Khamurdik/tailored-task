@@ -13,24 +13,30 @@ The `/s/:token` route.
 `shared`, `explorer` (as a composed component), `viewer`.
 
 ## Responsibilities
-- [ ] Read the credential out of the route (`/s/:code`) and send it as
+- [x] Read the credential out of the route (`/s/:code`) and send it as
       `X-Share-Token` — **never as a query parameter and never in a path the API
       sees**, so it cannot land in a server access log
-- [ ] Resolve it via `GET /shares/resolve` → `{ rootNodeId, role, expiresAt }`,
+- [x] Resolve it via `GET /shares/resolve` → `{ rootNodeId, role, expiresAt }`,
       then fetch `GET /nodes/:rootNodeId` with the same header for the name and
       the children. Two requests, deliberately: the API declines to inline a
       node summary into the resolve response so that every fact a visitor learns
       about the tree has passed through `NodeAccessGuard`. See
       [`links/TODO.md`](../../../../api/src/links/TODO.md)
-- [ ] The route accepts both credential spellings — a 43-char token and a
+- [x] The route accepts both credential spellings — a 43-char token and a
       16-char short code are the same route and the same code path
-- [ ] Render `<Explorer readOnly />` scoped to that root
-- [ ] Breadcrumbs stop at the share root — never reveal ancestors above it
-- [ ] Minimal header: item name, "Shared with you", no account menu
-- [ ] `Referrer-Policy: no-referrer` on this route
-- [ ] **One screen for every failure** — invalid, revoked, expired, deleted, and
-      never-existed all render the same thing. See below
-- [ ] If the visitor happens to be signed in, still show the read-only view —
+- [x] Render `<Explorer readOnly />` scoped to that root — the **same**
+      component the owner uses, not a second read-only implementation
+- [x] Breadcrumbs stop at the share root. The **server** truncates them, so the
+      client never holds the ancestors to render — structural, not a filter
+- [x] Minimal header: item name, "Shared with you", no account menu
+- [ ] `Referrer-Policy: no-referrer` on this route. **Not done in the client** —
+      it is a response header, so it belongs to whatever serves the SPA, and the
+      API already sets it on `/shares/resolve`. Needs a hosting-level rule
+- [x] **One screen for every failure** — invalid, revoked, expired, deleted, and
+      never-existed all render the same thing, because the API answers all five
+      with one byte-identical 404. `retry: false`, so a dead link does not spend
+      three requests against the throttle that protects every share
+- [x] If the visitor happens to be signed in, still show the read-only view —
       do not silently upgrade them into the owner UI
 
 ## One failure screen, not four

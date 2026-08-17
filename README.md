@@ -1,17 +1,25 @@
 # Data Room — module skeleton
 
-This tree contains no code yet. Every directory holds a `TODO.md` that defines
-what that module owns, what it may depend on, and what "done" means for it.
+Every directory holds a `TODO.md` that defines what that module owns, what it may
+depend on, and what "done" means for it. Those files were written before the code
+and are kept current with it: ticked boxes are what exists, and each carries an
+**Implementation notes** section recording what did not survive contact.
+
+**All twelve backend modules and all seven frontend features are built.** What
+remains is depth rather than shape — see
+[`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) §7.
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first — it is the only
 document that describes the system as a whole. Everything else is scoped to a
 single module on purpose.
 
 Picking this up cold? Start with
-[`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) — where the code is, what
-broke while writing it, and what to do next. [`HANDOFF.md`](HANDOFF.md) carries
-the decision log and the version research; [`DEPLOYMENT.md`](DEPLOYMENT.md) is
-how to run it, including its §8 list of what does not work yet.
+[`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) — what was built, the
+decisions taken while building it, and an honest list of what is still missing.
+Then [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) for where the code
+is and [`IMPLEMENTATION-LOG.md`](IMPLEMENTATION-LOG.md) for the blockers hit on
+the way. [`HANDOFF.md`](HANDOFF.md) carries the original design decisions and the
+version research; [`DEPLOYMENT.md`](DEPLOYMENT.md) is how to run it.
 
 ## How to use these files
 
@@ -78,10 +86,11 @@ record the README deliverable asks for.
 | [`tests`](tests/TODO.md) | Every test in the system, declared before it is written. Mirrors the module tree. |
 
 No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
-test *requirements*; [`tests/`](tests/TODO.md) turns those into 556 addressable,
+test *requirements*; [`tests/`](tests/TODO.md) turns those into **570** addressable,
 traceable declarations, grouped by what the user is trying to do, and is where
-they are implemented. The first run is meant to be red — see
-[`tests/TODO.md`](tests/TODO.md) §4.
+they are implemented. 391 are implemented, including 80 of the 92 `P0`s. A red
+`pnpm test` is still the resting state — the failures are the coverage gate
+emitting one per unimplemented declaration. See [`tests/TODO.md`](tests/TODO.md) §4.
 
 ## Suggested order
 
@@ -121,13 +130,13 @@ Two modules are **deferred and out of scope**: [`search`](apps/api/src/search/TO
 here) and [`audit`](apps/api/src/audit/TODO.md). Both stay in the repo as design
 notes. Neither has a dependent, which is what makes deferring them free.
 
-The [`nodes`](apps/api/src/nodes/TODO.md) **physical schema** is still an open
-decision, and it is no longer on the critical path. That module now publishes a
-contract — a `Node` shape and an ancestor chain as a list of ids — that every
-module above L1 compiles against, so the choice between a materialized path, a
-recursive CTE, and a closure table stays inside the repository and can be made
-when `nodes` is built. See [`nodes/TODO.md`](apps/api/src/nodes/TODO.md)
-§Storage.
+The [`nodes`](apps/api/src/nodes/TODO.md) **physical schema** was decided when
+that module was built: a **materialized path** of ancestor ids, with six indexes
+and seven CHECK constraints. The point of publishing a contract first — a `Node`
+shape and an ancestor chain as a list of ids — was that **nothing above L1 changed
+when the strategy was chosen**, and `path` appears in exactly two files. See
+[`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage for the comparison against
+a recursive CTE and a closure table.
 
 ## Authentication at a glance
 

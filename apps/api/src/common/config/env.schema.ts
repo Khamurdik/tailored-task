@@ -77,6 +77,29 @@ export const EnvSchema = z.object({
   AWS_SECRET_ACCESS_KEY: blankAsUndefined,
   S3_PRESIGN_GET_TTL_SECONDS: z.coerce.number().int().positive().default(60),
 
+  /**
+   * An S3-compatible endpoint, for a local bucket.
+   *
+   * Unset means real AWS, which is the deployed configuration. Set, it points
+   * the adapter at something like MinIO — which is what makes the upload path
+   * runnable, and therefore *testable*, without an AWS account. The four things
+   * that cannot be proven against the in-memory twin all live here: the
+   * presigned PUT's signature, the `HeadObject` at `/complete`, the ranged read
+   * for the magic bytes, and `Content-Disposition` on download.
+   */
+  S3_ENDPOINT: blankAsUndefined,
+
+  /**
+   * Path-style addressing (`host/bucket/key`) rather than virtual-hosted
+   * (`bucket.host/key`).
+   *
+   * Required for MinIO and for anything else reached by IP or by a bare
+   * hostname, because there is no wildcard DNS to put a bucket name in front of.
+   * Defaults to true **only when an endpoint is set**, which is the case where
+   * it is always wanted — see `loadConfig`.
+   */
+  S3_FORCE_PATH_STYLE: booleanish.optional(),
+
   CORS_ORIGINS: commaList.default([]),
 });
 

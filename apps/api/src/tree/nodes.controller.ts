@@ -26,8 +26,7 @@ import {
 import { NodeAccessGuard, NodeAccessResolver, RequireAccess } from '../access';
 import { Actor, RequireAuth, SessionGuard } from '../auth';
 import { AppError, type AccessContext, type RequestActor } from '../common';
-import { NodesService, type Node } from '../nodes';
-import { toChildrenPage, toDetail } from './node.presenter';
+import { NodesService, toChildrenPage, toDetail, type Node } from '../nodes';
 
 /**
  * The tree over HTTP.

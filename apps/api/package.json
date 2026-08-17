@@ -7,10 +7,10 @@
     "node": ">=26.0.0"
   },
   "scripts": {
-    "dev": "nest start --watch",
-    "debug": "nest start --debug --watch",
+    "dev": "nest start --watch --env-file .env",
+    "debug": "nest start --debug --watch --env-file .env",
     "build": "nest build",
-    "start": "node dist/main",
+    "start": "node --env-file-if-exists=.env dist/main",
     "start:prod": "node dist/main",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.seed.json",
     "lint": "eslint .",
@@ -37,6 +37,7 @@
     "@nestjs/throttler": "6.5.0",
     "@node-rs/argon2": "2.1.0",
     "@prisma/client": "6.19.3",
+    "cron": "4.4.0",
     "google-auth-library": "11.0.2",
     "helmet": "8.3.0",
     "nestjs-zod": "5.5.0",

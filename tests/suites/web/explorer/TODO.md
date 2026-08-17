@@ -124,6 +124,7 @@ rows rather than one, because they fail in three different layers.
 | WEB-EXPLORER-078 | `readOnly` ignores drag gestures entirely | security | P1 |
 | WEB-EXPLORER-079 | `readOnly` renders no upload dropzone | security | P1 |
 | WEB-EXPLORER-080 | Keyboard shortcuts that mutate are inert in `readOnly` | security | P1 |
+| WEB-EXPLORER-081 | `readOnly` offers no create action from the **empty state** either | security | P0 |
 
 ### Existing declarations
 
@@ -147,3 +148,8 @@ rows rather than one, because they fail in three different layers.
   feature and the second is the bug that gets shipped.
 - The `readOnly` group is security, not cosmetics. It is the only thing standing
   between a share visitor and a delete button.
+- WEB-EXPLORER-081 was added while implementing, and it is not a duplicate of
+  -001. The empty state is rendered by a **different branch** than the table, so
+  a `readOnly` guard applied to the row actions and the header can be complete
+  and still leave a create button on every empty folder — which is the one a
+  share visitor is most likely to land on.

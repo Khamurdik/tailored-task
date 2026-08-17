@@ -1,9 +1,11 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 
-import { LoginPage, ProtectedRoute, SessionProvider, useSession } from '@/features/auth';
+import { LoginPage, ProtectedRoute, SessionProvider } from '@/features/auth';
+import { FolderPage, RoomsPage } from '@/features/explorer';
+import { PublicViewPage } from '@/features/public-view';
+import { UploadPanel, useUploadRunner } from '@/features/uploads';
 import { createQueryClient } from '@/shared/query/query-client';
-import { Button } from '@/shared/ui';
 
 const queryClient = createQueryClient();
 
@@ -24,57 +26,68 @@ export function App() {
             <Route path="/login" element={<LoginPage />} />
 
             {/* Public. No session required, and none assumed. */}
-            <Route path="/s/:code" element={<SharePlaceholder />} />
+            <Route path="/s/:code" element={<PublicViewPage />} />
 
             <Route
               path="/"
               element={
                 <ProtectedRoute>
-                  <RoomsPlaceholder />
+                  <RoomsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/*
+              The folder id is in the URL, which is what makes a folder
+              linkable, reloadable and reachable with the back button. Holding
+              it in state instead breaks all three and only the first gets
+              noticed.
+            */}
+            <Route
+              path="/nodes/:id"
+              element={
+                <ProtectedRoute>
+                  <FolderPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/*
+              An open preview is a **route**, not component state, so it is
+              linkable and the back button closes it. The spec wrote this as
+              `/rooms/:id/f/:fileId`; the tree is addressed by node id here
+              rather than by room, so it is `/nodes/:id/f/:fileId` — same shape,
+              consistent with the route above it.
+            */}
+            <Route
+              path="/nodes/:id/f/:fileId"
+              element={
+                <ProtectedRoute>
+                  <FolderPage />
                 </ProtectedRoute>
               }
             />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+
+          {/*
+            **Outside `<Routes>`, deliberately.** The runner and the panel must
+            outlive the page a transfer was started from: mounted inside a route,
+            navigating into a folder unmounts them and every upload dies, which
+            is the bug that makes people re-drop files and end up with
+            duplicates. `WEB-UPLOADS-001` is exactly this.
+          */}
+          <Uploads />
         </SessionProvider>
       </BrowserRouter>
     </QueryClientProvider>
   );
 }
 
-/**
- * Stands in until `explorer` exists. Kept deliberately plain: a placeholder
- * that looks finished is one nobody replaces.
- */
-function RoomsPlaceholder() {
-  const { user, signOut } = useSession();
-
-  return (
-    <main className="mx-auto max-w-3xl space-y-4 p-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Data rooms</h1>
-          <p className="text-sm text-muted-foreground">Signed in as {user?.email}</p>
-        </div>
-        <Button variant="outline" onClick={() => void signOut()}>
-          Sign out
-        </Button>
-      </header>
-      <p className="text-sm text-muted-foreground">
-        The explorer is not built yet — see apps/web/src/features/explorer/TODO.md.
-      </p>
-    </main>
-  );
+/** The queue driver and its panel, as one mount point. */
+function Uploads() {
+  useUploadRunner();
+  return <UploadPanel />;
 }
 
-function SharePlaceholder() {
-  return (
-    <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-xl font-semibold">Shared with you</h1>
-      <p className="text-sm text-muted-foreground">
-        The read-only view is not built yet — see features/public-view/TODO.md.
-      </p>
-    </main>
-  );
-}

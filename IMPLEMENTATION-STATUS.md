@@ -8,7 +8,9 @@ specification-only to a booting API and a working login screen.*
 
 | Document | What it is for |
 | --- | --- |
+| [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) | **Start here.** What was built, what changed on contact, what is missing |
 | **this file** | Where the code is, what broke, what to do next |
+| [`IMPLEMENTATION-LOG.md`](IMPLEMENTATION-LOG.md) | *What happened*, in order, and what blocked it |
 | [`HANDOFF.md`](HANDOFF.md) §3 | The decision log — *why* things are the way they are |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | How to run it; §8 is what does not work yet |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The only whole-system document |
@@ -19,14 +21,16 @@ specification-only to a booting API and a working login screen.*
 
 ## 1. State in one table
 
-**566 declared tests · 210 implemented · 59 of 89 `P0`.** Lint clean in all four
+**570 declared tests · 391 implemented · 80 of 92 `P0`.** Lint clean in all four
 packages, `pnpm -r typecheck` clean, `pnpm build` succeeds, the API boots and
 serves, the web app builds and signs a user in.
 
-*Updated after the session that built `tree`, `sharing` and `links`. **The
-product now works end to end on the API**: an owner creates a room and folders,
-issues a link, a stranger opens it with no account, sees only that subtree, and
-the link dies the moment it is revoked.*
+*Updated after the session that built `tree`, `sharing`, `links`, `files` and
+`jobs`, and covered `users`. **The backend is complete** — every module in the
+layer graph exists. An owner creates a room and folders, uploads documents,
+issues a link; a stranger opens it with no account, sees only that subtree and
+downloads from it; the link dies the moment it is revoked; and six scheduled
+jobs clean up behind all of it.*
 
 | Module | Layer | State |
 | --- | --- | --- |
@@ -34,23 +38,26 @@ the link dies the moment it is revoked.*
 | `common` | L0 | **Done.** Config, Prisma, errors, cursor, names, event bus, health |
 | `storage` | L1 | **Done** offline. S3 adapter never run against a real bucket |
 | `users` | L1 | **Done.** Repository, service, seeder, `users` table |
-| `nodes` | L1 | **Done, no controller.** Materialized path, property test green |
+| `nodes` | L1 | **Done.** Materialized path, keyset listing, property test green |
 | `access` | L2 | **Done.** Pure resolver, guard, **resolver service**, codec, `shares` |
 | `auth` | L2 | **Done.** 5 routes, refresh rotation, Google linking |
 | `tree` | L3 | **Done.** 9 `/nodes/*` routes behind `SessionGuard` + `NodeAccessGuard` |
 | `sharing` | L3 | **Done.** Issue, list with inheritance, revoke, cascade, login-time claiming |
 | `links` | L3 | **Done.** Anonymous resolve, uniform 404, throttle, no-store |
-| `files` | L3 | Not started |
+| `files` | L3 | **Done.** Upload lifecycle, magic-byte policy, rollups, reaper |
 | `search` | L3 | **Deferred, out of scope** |
 | `audit` | L4 | **Deferred, out of scope** |
-| `jobs` | L4 | Not started |
+| `jobs` | L4 | **Done.** Registry, runs as objects, 5 routes, 6 jobs, sweep + stale guard |
 | `web/shared` | — | **Done.** Client, token store, refresh lock, errors, keys, 10 UI primitives, mock data layer |
 | `web/auth` | — | **Done.** Login, session bootstrap, route guards |
-| `web/explorer` | — | Not started — **80 declarations, the largest suite** |
-| `web/uploads` · `viewer` · `sharing` · `public-view` | — | Not started |
+| `web/explorer` | — | **Browsing, create, rename, delete, `readOnly`.** 32/81 — no drag, bulk, keyboard, or optimistic updates |
+| `web/uploads` | — | **Drop, pick, progress, cancel, retry.** 19/47 — no per-row drop, directory drops, or cross-tab mirror |
+| `web/viewer` | — | **PDF preview, download, expiry recovery.** 17/19 |
+| `web/sharing` | — | **Mint, invite, list, revoke.** 18/30 — no expiry picker or row indicator |
+| `web/public-view` | — | **`/s/:code`, read-only, one failure screen.** 14/28 |
 
-Four migrations applied: `init_users`, `add_nodes`, `add_shares`,
-`add_refresh_tokens`. `job_runs` lands with `jobs`.
+Five migrations applied: `init_users`, `add_nodes`, `add_shares`,
+`add_refresh_tokens`, `add_job_runs`.
 
 ### Coverage by suite
 
@@ -58,23 +65,32 @@ Four migrations applied: `init_users`, `add_nodes`, `add_shares`,
 suites/api/access         18/  20    suites/web/shared         44/  44
 suites/api/auth           18/  28    suites/web/auth           35/  49
 suites/api/common         12/  18    suites/contract           12/  12
-suites/api/nodes          19/  28    suites/api/storage        10/  13
-suites/api/sharing        20/  20    suites/api/links          21/  23
-suites/api/{files,jobs,users,search}   0
-suites/web/{explorer,public-view,sharing,uploads,viewer}   0
-suites/journeys            0/  39
+suites/api/nodes          19/  28    suites/api/storage        14/  14
+suites/api/sharing        20/  20    suites/api/links          22/  23
+suites/api/files          22/  22    suites/api/jobs           24/  24
+suites/api/users          15/  15    suites/api/search          0/   9
+suites/web/explorer       32/  81    suites/web/uploads        19/  47
+suites/web/viewer         17/  19    suites/web/sharing        18/  30
+suites/web/public-view    14/  28
+suites/journeys           16/  39
 ```
 
-`api/sharing` is complete. `api/links` is 21/23: `API-LINKS-023` is `P2` and
-deliberately unimplemented — getting it right means the throttle returns 404
-rather than 429, which removes a genuinely useful signal from legitimate
-clients, and the row exists to make that trade visible rather than to be taken.
+**Every API suite is complete except four, and each is short for a stated
+reason:**
 
-Ten declarations were added across three sessions. None is padding: seven cover
-the request pipeline, which could not be asserted before a route existed; two
-cover leaks found while building (`API-SHARING-020`, `API-SHARING-021`); one
-covers a contract violation that had shipped because nothing had ever produced a
-cursor.
+- `api/links` 22/23 — `API-LINKS-023` is `P2` and deliberately unimplemented.
+  Getting it right means the throttle returns 404 rather than 429, which removes
+  a genuinely useful signal from legitimate clients; the row exists to make the
+  trade visible, not to be taken.
+- `api/search` 0/9 — the module is deferred and out of scope.
+- `api/auth` 18/28, `api/common` 12/18, `api/nodes` 19/28, `api/access` 18/20 —
+  ordinary unwritten coverage against finished modules. 22 declarations between
+  them, none `P0`-blocking a shipped feature.
+
+Twelve declarations were added while building. None is padding: seven cover the
+request pipeline, which could not be asserted before a route existed; three cover
+leaks or defects found while building (`API-SHARING-020`, `API-SHARING-021`,
+`API-COMMON-018`); two cover the upload policy toggle from the `files` side.
 
 ---
 
@@ -103,9 +119,34 @@ all 41 declarations pass, including every one of the 16 `P0`s. `API-SHARING-002`
 tries by hand — is green, along with `API-LINKS-004`, the single comparison that
 would catch the indistinguishability design failing.
 
-**The gap now is `files`.** Nothing can be uploaded, so a data room holds
-folders and no documents. It also owns the rollup maintenance the listing
-already depends on — see *Still genuinely open*.
+~~**The gap now is `files`.**~~ **Closed.** 22/22, including the rollup
+maintenance the listing depended on.
+
+**The gap is the web app**, and it is now the only one. **The backend is
+complete** — every module in the layer graph is built and every API suite is
+green.
+
+**The owner's product works end to end in the browser**, against the mock:
+sign in, create a room and folders, upload PDFs with real progress, preview them,
+download them, rename, move and delete. That is `explorer` + `uploads` +
+`viewer`.
+
+What remains is the half a *recipient* sees. **`web/sharing`** (30 declarations)
+is the dialog that mints a link, and **`web/public-view`** (28, six of them `P0`)
+is the read-only page at `/s/:code` — the screen the whole product exists to
+produce, and the only one a stranger ever reaches. Neither is written, so a link
+can only be minted with `curl`.
+
+Also unfinished, each unticked with a reason in its module `TODO.md`:
+`explorer` has no drag-move, bulk selection, keyboard navigation or optimistic
+updates; `uploads` has no per-row drop target, directory expansion or cross-tab
+mirror.
+
+The mock data layer is what makes that tractable rather than alarming: the web
+app already runs end to end against `VITE_API_MODE=mock`, which implements the
+tree, pagination, conflicts, upload lifecycle and share scoping. Every feature
+below can be built against it and then pointed at the real API by changing one
+environment variable.
 
 ---
 
@@ -132,9 +173,9 @@ pnpm dev:web       # sign in as ana@example.com / change-me-now
 `pnpm test` now includes `api-integration`, so **it needs Docker**. CI gates on
 the three projects that do not (`gate`, `contract`, `api-unit`).
 
-**A red suite is the resting state.** 400 of the 570 tests are the coverage gate
-emitting one failure per unimplemented declaration. `pnpm declared` is the real
-progress number.
+**A red suite is the resting state.** The ~296 failures in a full run are the
+coverage gate emitting one per unimplemented declaration; every other test file
+is green. `pnpm declared` is the real progress number.
 
 ---
 
@@ -312,15 +353,14 @@ In order. Each step's declarations are already written.
    can never satisfy.
 2. ~~**`sharing` + `links` (L3).**~~ **Done.** 41 declarations, all green,
    including all 16 `P0`s.
-3. **`files` (L3).** Upload lifecycle — the next real gap. `storage` is done and
-   waiting, and every route it needs a guard for now has a working one. It also
-   owns the rollup maintenance the listing already depends on — see below.
+3. ~~**`files` (L3).**~~ **Done.** 22 declarations, all green, including the
+   rollup maintenance.
 4. **`web/explorer`.** 80 declarations. Can be built against the mock
    (`VITE_API_MODE=mock`) or the real API; the mock already implements the tree,
    pagination, conflicts and share scoping.
 5. **`web/uploads` → `viewer` → `public-view`.** Note `viewer` before
    `public-view`, which depends on it.
-6. **`jobs` (L4).** Depends on `files`, so it genuinely cannot move earlier.
+6. ~~**`jobs` (L4).**~~ **Done.** 24 declarations, all green. It could not have moved earlier: `reap-pending-uploads` and `hard-delete-expired` both need `files`.
 7. **`tests/src/reporters` + `history`**, then the Playwright journeys.
 
 ### Two known gaps in the harness
@@ -333,11 +373,6 @@ In order. Each step's declarations are already written.
 
 ### Still genuinely open
 
-- **`subtree_files` / `subtree_bytes` are served and unmaintained.** The children
-  listing returns both columns because `NodeSummarySchema` declares them, and
-  nothing writes them — they default to 0. That is *honest* today, since no file
-  can exist until `files` lands, and becomes a lie the same day it does.
-  `API-FILES-016` declares the maintenance; do not ship `files` without it.
 - **~64 declarations are unwritten tests against modules already marked Done** —
   `api/users` alone has 16 with 4 `P0` for a module that has been finished since
   the first session. The `implemented / declared` ratio reads as "a third of the

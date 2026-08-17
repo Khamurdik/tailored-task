@@ -123,6 +123,26 @@ export class SharesRepository {
     return result.count;
   }
 
+  /**
+   * Deletes grants past their expiry, and ones revoked long enough ago.
+   *
+   * Revoked rows are kept for a window rather than dropped immediately: until
+   * they are gone they are the record of what access existed and when it was
+   * withdrawn, which in a legal-discovery product is a question that gets asked.
+   * `purge-expired-grants` is where they finally go.
+   */
+  async purgeExpired(input: { now: Date; revokedBefore: Date }): Promise<number> {
+    const result = await this.prisma.share.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { not: null, lt: input.now } },
+          { revokedAt: { not: null, lt: input.revokedBefore } },
+        ],
+      },
+    });
+    return result.count;
+  }
+
   /** Pending grants addressed to an email that has no account yet. */
   async findPendingForEmail(email: string): Promise<Share[]> {
     return this.prisma.share.findMany({

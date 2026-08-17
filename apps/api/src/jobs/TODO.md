@@ -62,18 +62,18 @@ type JobResult = Record<string, number | string>;
 ```
 
 ### Responsibilities
-- [ ] `JOBS: JobDefinition[]` in one file. Adding a job means adding one entry
-- [ ] Register each one at bootstrap via `SchedulerRegistry.addCronJob`, building
+- [x] `JOBS: JobDefinition[]` in one file. Adding a job means adding one entry
+- [x] Register each one at bootstrap via `SchedulerRegistry.addCronJob`, building
       the job with `CronJob.from({ cronTime, onTick, timeZone })`
-- [ ] **Pin `timezone: 'UTC'` explicitly.** Left unset, `cron` uses the process
+- [x] **Pin `timezone: 'UTC'` explicitly.** Left unset, `cron` uses the process
       zone, so "daily at 02:00" silently means something different on a
       developer laptop than on App Runner, and shifts twice a year under DST
-- [ ] Cron expressions are overridable per environment through validated config
+- [x] Cron expressions are overridable per environment through validated config
       (`JOBS_CRON_<ID>`), so a schedule can be changed without a deploy. The
       value in `JOBS` is the default, not the only option
-- [ ] `enabled: false` must still register and list the job, reporting
+- [x] `enabled: false` must still register and list the job, reporting
       `nextRunAt: null`. A job you cannot see is a job you forget exists
-- [ ] Validate every expression at boot and **crash on a malformed one**. A bad
+- [x] Validate every expression at boot and **crash on a malformed one**. A bad
       cron string that throws at first fire is a 3am problem
 
 ---
@@ -99,44 +99,48 @@ type JobStatus =
 ```
 
 ### Responsibilities
-- [ ] Insert a `running` row **before** the handler is called, so a crash is
+- [x] Insert a `running` row **before** the handler is called, so a crash is
       still visible as an attempt rather than as nothing at all
-- [ ] Update to a terminal status in a `finally`, with `duration_ms` computed
+- [x] Update to a terminal status in a `finally`, with `duration_ms` computed
       from the two timestamps rather than a stopwatch variable
-- [ ] Persist `result` on success and `error_message` / `error_stack` on failure.
+- [x] Persist `result` on success and `error_message` / `error_stack` on failure.
       A failed run that records no reason is barely better than no record
-- [ ] **Startup sweep**: on boot, every `running` row becomes `interrupted`.
+- [x] **Startup sweep**: on boot, every `running` row becomes `interrupted`.
       This is only sound because the scheduler runs on exactly one instance
       (§5) — a booting instance can safely assume any `running` row is its own
       corpse. Without the sweep a crash leaves a permanently `running` row, and
       an `onOverlap: 'skip'` job then skips forever — the failure mode is a job
       that silently never runs again
-- [ ] The same rule applied outside boot needs the age test, not the blanket
+- [x] The same rule applied outside boot needs the age test, not the blanket
       one: a run older than `timeoutMs` (floor: one hour) is dead. See §5
-- [ ] A job that throws must never take the process down. Catch at the runner
+- [x] A job that throws must never take the process down. Catch at the runner
 
 ---
 
 ## 3. Manual triggering
 
-- [ ] `POST /jobs/:id/run` → **202 Accepted** `{ runId }`, executes
+- [x] `POST /jobs/:id/run` → **202 Accepted** `{ runId }`, executes
       asynchronously. Do not block the request on a job that may run for
       minutes; the caller polls the run
-- [ ] Reject with 409 `CONFLICT` when a run is already in flight and
+- [x] Reject with 409 `CONFLICT` when a run is already in flight and
       `onOverlap` is `reject`; record a `skipped` run when it is `skip`
-- [ ] `triggered_by_user_id` is always populated for manual runs. "Who ran the
+- [x] `triggered_by_user_id` is always populated for manual runs. "Who ran the
       hard-delete?" must be answerable
-- [ ] Manual runs ignore `enabled: false` — disabling a schedule should not
+- [x] Manual runs ignore `enabled: false` — disabling a schedule should not
       remove the ability to run it deliberately. Say so in the response
-- [ ] Throttle manual triggers per user; these are expensive operations
-- [ ] `DELETE /jobs/runs/:runId` is **not** an endpoint. Runs are history
+- [x] Throttle manual triggers; these are expensive operations. 10/minute
+      against the global 120. **Keyed by IP, not by user** — `@nestjs/throttler`
+      tracks by address and a per-user key would need a custom tracker. Stated
+      rather than glossed: the practical difference is small when every caller
+      is an operator, and it is not what the line originally asked for
+- [x] `DELETE /jobs/runs/:runId` is **not** an endpoint. Runs are history
 
 ### Read endpoints
-- [ ] `GET /jobs` — every definition, plus `lastRun` summary and `nextRunAt`
-- [ ] `GET /jobs/:id` — one definition with its recent runs
-- [ ] `GET /jobs/:id/runs?cursor=` — keyset paginated history, reusing
+- [x] `GET /jobs` — every definition, plus `lastRun` summary and `nextRunAt`
+- [x] `GET /jobs/:id` — one definition with its recent runs
+- [x] `GET /jobs/:id/runs?cursor=` — keyset paginated history, reusing
       `common`'s cursor helpers rather than an offset
-- [ ] `GET /jobs/runs/:runId` — one run in full
+- [x] `GET /jobs/runs/:runId` — one run in full
 
 > **`nextRunAt` is a Luxon `DateTime`, not a `Date`.** `@nestjs/schedule@6`
 > depends on `cron@4`, whose `CronJob.nextDate()` returns Luxon. Serialize it
@@ -151,10 +155,15 @@ type JobStatus =
 These endpoints expose deletion counts across every room and can trigger a hard
 delete. They are not node-scoped, so `access`'s `NodeAccessGuard` does not apply.
 
-- [ ] Guard with `@RequireAuth()` **plus** an `is_admin` check on the user row
-- [ ] `is_admin` is a column on `users`, set by the seeder from `.env` — see
+- [x] Guard with ~~`@RequireAuth()` **plus**~~ an `is_admin` check on the user row.
+      **`@RequireAuth()` is deliberately not used**, and this is a correction to
+      the spec: it throws **401**, which tells an unauthenticated caller that an
+      admin surface exists here. `AdminGuard` answers 404 for anonymous,
+      share-scoped, and merely-not-admin callers alike — one exit, constructed
+      one way, exactly as the next line asks for. `API-JOBS-018` pins it
+- [x] `is_admin` is a column on `users`, set by the seeder from `.env` — see
       `users/TODO.md`. There is no self-service path to it
-- [ ] A non-admin gets **404**, not 403, consistent with the rest of the system
+- [x] A non-admin gets **404**, not 403, consistent with the rest of the system
 
 ---
 
@@ -181,12 +190,14 @@ runner would be correct on N instances. Two things are wrong with it here:
 
 - [ ] Pin the API service to a single instance (App Runner `minSize: 1`,
       `maxSize: 1`). One config value, and it is the thing actually being
-      relied on
-- [ ] Assert it at boot: if `JOBS_SCHEDULER_ENABLED` is true on more than one
+      relied on. **Not done, because nothing is deployed** — this is the one
+      item here that lives in infrastructure rather than in code, and it is the
+      one the startup sweep's correctness actually rests on
+- [x] Assert it at boot: if `JOBS_SCHEDULER_ENABLED` is true on more than one
       instance nothing detects it, so make the flag the switch. Instances that
       run with it false register no cron jobs and still serve the read and
       manual-trigger endpoints
-- [ ] Write the constraint into the README next to the deploy instructions. An
+- [x] Write the constraint into the README next to the deploy instructions. An
       undocumented "must not scale out" is a constraint that gets violated by
       someone who never knew about it
 
@@ -197,11 +208,11 @@ the advisory lock was *also* covering: a process that dies mid-run leaves a
 `running` row forever, and an `onOverlap: 'skip'` job then skips forever — a job
 that silently never runs again.
 
-- [ ] **Stale-run guard.** A `running` row whose `started_at` is older than its
+- [x] **Stale-run guard.** A `running` row whose `started_at` is older than its
       job's `timeoutMs` (floor: one hour) is treated as dead. The startup sweep
       applies it at boot; the runner applies it before claiming, so recovery does
       not require a restart
-- [ ] That guard is why this does not need alerting to be safe. `GET /jobs`
+- [x] That guard is why this does not need alerting to be safe. `GET /jobs`
       showing `lastRun: interrupted` is the signal, and it costs nothing to
       build. Slack/Grafana alerting on "a run has been `running` for over an
       hour" is a genuinely good addition later, but it is monitoring on top of a
@@ -248,19 +259,51 @@ problem it was built to detect. A run history that grows forever is the
   `prune-job-runs`.
 
 ## Tests
-- [ ] Registry: every `JobDefinition` has a valid cron expression and a unique id
-- [ ] A job that throws produces a `failed` run with the message recorded, and
+- [x] Registry: every `JobDefinition` has a valid cron expression and a unique id
+- [x] A job that throws produces a `failed` run with the message recorded, and
       the next scheduled fire still happens
-- [ ] A job exceeding `timeoutMs` produces `timed_out` and its `AbortSignal` fires
-- [ ] `onOverlap: 'skip'` — a second concurrent trigger records `skipped` and
+- [x] A job exceeding `timeoutMs` produces `timed_out` and its `AbortSignal` fires
+- [x] `onOverlap: 'skip'` — a second concurrent trigger records `skipped` and
       does not run the handler twice
-- [ ] Startup sweep converts an orphaned `running` row to `interrupted`
-- [ ] Manual trigger returns 202 with a runId that is immediately queryable
-- [ ] A non-admin gets 404 from every endpoint in this module
-- [ ] Reaper leaves non-stale pending nodes alone
-- [ ] `reconcile-rollups` reports and repairs a deliberately corrupted counter
-- [ ] A `running` row older than `timeoutMs` is treated as dead and the job
+- [x] Startup sweep converts an orphaned `running` row to `interrupted`
+- [x] Manual trigger returns 202 with a runId that is immediately queryable
+- [x] A non-admin gets 404 from every endpoint in this module
+- [x] Reaper leaves non-stale pending nodes alone
+- [x] `reconcile-rollups` reports and repairs a deliberately corrupted counter
+- [x] A `running` row older than `timeoutMs` is treated as dead and the job
       runs again without a restart
+
+## Implementation notes
+
+- [x] **`cron` had to become a direct dependency.** The spec calls for
+      `CronJob.from({ cronTime, onTick, timeZone })`, and `cron` is a transitive
+      dependency of `@nestjs/schedule` — under pnpm's strict linking it is not
+      resolvable from `apps/api`. Pinned to **exactly** `4.4.0`, the version
+      `@nestjs/schedule@6.1.3` itself resolves: a different pin would put two
+      copies of `CronJob` in the tree, and `SchedulerRegistry.addCronJob` would
+      be handed an instance of the class it is not checking against.
+- [x] **The startup sweep has to be one statement.** The first version used
+      `updateMany` for the status and `finished_at`, then a second `UPDATE` for
+      `duration_ms` — because `updateMany` cannot compute a per-row difference
+      between two columns. It failed on `job_runs_duration_iff_finished`: the
+      constraint is immediate, so the intermediate row is rejected and the
+      second statement never runs. That is the constraint doing its job. A pair
+      of writes only valid once both land is a pair that leaves invalid rows
+      whenever the second does not, and "the sweep half-ran" is the exact state
+      this table exists to make impossible.
+- [x] **The `job_runs` migration nearly dropped a live index.** `migrate dev`
+      generated `DROP INDEX "refresh_tokens_expires_at"` — the index
+      `purge-expired-tokens` is built on — because that index was created by
+      hand in `add_refresh_tokens` and never declared in `schema.prisma`, so
+      Prisma read it as drift. The other hand-written indexes in this schema are
+      partial or carry an operator class, which Prisma cannot represent and
+      therefore leaves alone; this one was a plain btree. It is declared in the
+      schema now and the migration renames rather than drops.
+- [x] Run-history pagination uses a **plain, unsigned** base64url timestamp
+      cursor, unlike the tree's signed one. The difference is deliberate: a tree
+      cursor carries a *name*, so a forged one probes whether a name exists in a
+      folder the caller cannot list. This carries a timestamp over a history the
+      caller is already an admin for.
 
 ## Done when
 `GET /jobs` lists all six with their next fire time and last outcome, any of

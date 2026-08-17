@@ -6,13 +6,19 @@ modules land — if a step here is wrong, that is a bug in this file.
 For *what is built* rather than *how to run it*, see
 [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md).
 
-**Status: 2026-08-17.** **The API boots, connects, and serves `/health`**, and
-**the web app builds, runs, and signs a user in with no backend at all** —
-`VITE_API_MODE=mock` answers every request from fixtures.
-`common`, `storage` and `users` are implemented, the first migration is applied,
-and the seed provisions users. Every command in §3 and §4 below has been run;
-the hosted sections in §5 are the target and are marked as such. §8 tracks what
-is not yet true. `pnpm typecheck` is green across all four packages.
+**Status: 2026-08-17.** **The product works end to end.** Every module in the
+layer graph is built; the API serves 28 routes; the web app signs in, browses,
+uploads, previews, shares, and serves a read-only page to a stranger at
+`/s/:code`. It runs three ways: against the real stack, against a **local S3
+bucket** (MinIO in the compose file — no AWS account needed), and against the
+placeholder data layer with no backend at all.
+
+Twenty Playwright journeys cover the real browser + API + Postgres + bucket, and
+`JOURNEY-001` is the whole product in one pass.
+
+Every command in §3 and §4 below has been run; the hosted sections in §5 are the
+target and are marked as such. §8 tracks what is not yet true. `pnpm typecheck`
+and `pnpm lint` are green across all four packages.
 
 ---
 
@@ -78,6 +84,7 @@ a boot log is the least private place in a deployment.
 | `SEED_USERS` | A JSON array. This is the **only** way an account is created — see §4 |
 | `GOOGLE_CLIENT_ID` | Optional. Leave blank and the button is not rendered; password login still works |
 | `UPLOAD_FILE_POLICY` | `pdf-only` (default) or `all-files`. The default is the restrictive one on purpose |
+| `S3_ENDPOINT` | Unset for real AWS. Set to `http://localhost:9000` for the MinIO in `docker-compose.test.yml`, which is what makes uploads work with no AWS account |
 | `JOBS_SCHEDULER_ENABLED` | Must be true on **exactly one** instance — see §6 |
 | `CORS_ORIGINS` | Comma-separated. No cookies means no credentialed CORS |
 
@@ -93,13 +100,29 @@ know.
 ```bash
 pnpm install
 pnpm --filter @dataroom/shared build   # both apps import this; build it first
-docker compose -f docker-compose.test.yml up -d   # Postgres 18 on :5433
+docker compose -f docker-compose.test.yml up -d   # Postgres 18 on :5433, MinIO on :9000
 pnpm db:migrate                        # applies migrations
 pnpm db:seed                           # provisions SEED_USERS
 pnpm dev                               # api on :3000, web on :5173
 ```
 
-Two things that are easy to get wrong here:
+Three things that are easy to get wrong here:
+
+- **`apps/api/.env` is read by the scripts, not by the application.** Nothing in
+  `src/` loads it: `loadConfig()` reads `process.env` and that is all. Until
+  2026-08-17 nothing put the file *into* `process.env` either, so `pnpm dev:api`
+  died with `Invalid environment … DATABASE_URL: received undefined` on a
+  correctly configured machine. It went unnoticed because everything that had
+  ever booted the API supplied the environment some other way — Prisma's CLI
+  loads `.env` itself, the integration harness builds its config in-process, and
+  `playwright.config.ts` passes every variable explicitly.
+
+  `dev`, `debug` and `start` now pass `--env-file`. **`start:prod` deliberately
+  does not**: configuration in a deployment comes from the platform, and a
+  process that quietly prefers a baked-in file is how a staging container ends
+  up pointed at a developer's database. Note that `--env-file` never overrides a
+  variable that is already set, so the file cannot shadow the platform even
+  where it is read.
 
 - **The database is on `5433`, not 5432.** A machine running this project very
   likely already has a Postgres on the default port, and a clash surfaces as
@@ -130,6 +153,25 @@ happened to start.
 | `pnpm db:deploy` | `prisma migrate deploy` — applies migrations, **does not seed** |
 | `pnpm db:seed` | The seed alone. Safe to re-run |
 | `pnpm db:reset` | Drops and rebuilds. **Never in production** |
+| `pnpm test:e2e` | The Playwright journeys. Prepares its own database, then starts the API and the web app |
+
+### Uploading locally
+
+Uploads go **direct to the bucket** from the browser, so they need one. The
+compose file runs MinIO for exactly this; point the API at it:
+
+```
+S3_ENDPOINT=http://localhost:9000
+S3_BUCKET=dataroom
+AWS_ACCESS_KEY_ID=dataroom
+AWS_SECRET_ACCESS_KEY=dataroom-secret
+AWS_REGION=us-east-1
+```
+
+Leave `S3_ENDPOINT` unset and the adapter talks to real AWS, which is the
+deployed configuration. The bucket is created by the `minio-init` container on
+`docker compose up`, and its contents live in tmpfs — a restart is a clean
+bucket, which is what you want locally and never in production.
 
 ### Running the web app with no backend
 
@@ -246,8 +288,10 @@ passwords.
 
 ## 5. Hosted deployment — the target
 
-Not yet exercised. Recorded now so the constraints are visible before anything
-is provisioned.
+**Nothing is provisioned.** The build artifacts now exist and are exercised
+locally — `apps/api/Dockerfile` and `vercel.json`, both covered below — but no
+account, bucket, database or service has been created, so this section is a
+runbook for a deployment that has not happened rather than a record of one.
 
 | Piece | Target | Why |
 | --- | --- | --- |
@@ -255,6 +299,88 @@ is provisioned.
 | API | AWS App Runner | Container, one instance — see §6 |
 | Database | Neon | Postgres 18, scales to zero |
 | Blobs | S3 | Presigned direct-to-browser, bucket never public |
+
+### The API image
+
+Built from the repository root, because `@dataroom/api` depends on
+`@dataroom/shared` through `workspace:*` and a context rooted at `apps/api/`
+cannot see it:
+
+```bash
+docker build -f apps/api/Dockerfile -t dataroom-api .
+```
+
+Four stages: install against the manifests alone so the layer caches, build
+`shared` then the API, `pnpm deploy --prod` into a standalone tree, and a runner
+holding that tree and nothing else. 593 MB, `node:26-slim` (which is Node 26.7.0
+exactly, matching `.nvmrc`, and already carries the `libssl.so.3` that Prisma's
+query engine needs — so there is no apt layer).
+
+Three things in it are less obvious than they look:
+
+- **`pnpm deploy` needs `--legacy`.** Since pnpm 10 it refuses to run unless the
+  workspace sets `inject-workspace-packages=true`. Setting that would change how
+  every local install links `@dataroom/shared`, which is a workspace-wide change
+  to serve one container build.
+- **The Prisma client is generated into the deployed tree**, from the deployed
+  tree, by the CLI left behind in the build stage — `prisma` is a
+  devDependency and so is absent from a `--prod` tree by definition. Generating
+  it in `/app` instead would put it in a `node_modules` the final image never
+  receives, and the failure would appear at the first query rather than at build.
+- **The image runs `node dist/main`, not `pnpm start`** — see the `start:prod`
+  note in §3.
+
+It **does not** run migrations or the seed. Both stay the deliberate, separate
+steps §4 describes: `migrate deploy` is not idempotent in the sense operators
+assume, and `db:seed` is the only thing in the system that creates a user.
+
+Verified by running, not by reading: the container boots with **no `.env` file
+and platform environment only**, connects to Postgres, signs a user in (which
+exercises the `@node-rs/argon2` native binding), completes a full upload through
+the presigned PUT to a real bucket, and reports `healthy` on its `HEALTHCHECK`.
+
+Set the App Runner service port to **3000** (the image's `PORT`), and remember
+`minSize: 1` / `maxSize: 1` — §6 explains why that is a correctness requirement
+rather than a cost one.
+
+### The web app
+
+`vercel.json` at the repository root carries the build, the `/api` rewrite and
+the security headers. **Two placeholders must be replaced before the first
+deploy** — `REPLACE-WITH-APP-RUNNER-HOST` (the rewrite destination) and
+`REPLACE-WITH-BUCKET-HOST` (the bucket origin, which appears in `connect-src`
+for the upload PUT and in `frame-src` for the PDF preview). Vercel does not
+interpolate environment variables into `vercel.json`, so these are literals and
+there is no way to defer them to a project setting.
+
+Set the Vercel project's root directory to the **repository root**, not
+`apps/web` — the build has to reach `packages/shared`.
+
+The rewrite keeps the API same-origin in production, matching the dev proxy, so
+`VITE_API_URL` should be left **unset** on Vercel. Setting it to the App Runner
+host instead is a supported alternative, but then the browser talks
+cross-origin: add that origin to `connect-src`, and add the Vercel origin to the
+API's `CORS_ORIGINS`.
+
+**The CSP is verified, not guessed.** The twenty journeys were run against the
+production build served with exactly these headers and through the `/api`
+rewrite, and all twenty pass — including `JOURNEY-001`'s upload (an XHR PUT to
+the bucket origin) and `JOURNEY-005`'s preview (an `<iframe>` of a presigned URL
+on that same origin), which are precisely what a wrong `connect-src` or
+`frame-src` breaks. `script-src` carries no `'unsafe-inline'` and no
+`'unsafe-eval'`; the built `index.html` contains no inline script, so nothing
+needs them. **`style-src` does keep `'unsafe-inline'`** — Radix and React set
+inline `style` attributes — and that is a real, stated weakening of §6's "ship
+the CSP with no `unsafe-inline`", which is about scripts.
+
+The Google directives (`accounts.google.com/gsi/*`) can be deleted outright if
+Google sign-in stays disabled; nothing else references them.
+
+One constraint to check before the first deploy: **`engines.node` is
+`>=26.0.0`**, and Vercel may not offer Node 26 yet. The web build is static
+output, so building it on 24 costs nothing — but the engines floor has to be
+relaxed to `>=24.15.0` for that to be allowed, which is the same move §6
+describes for the API.
 
 ### S3 bucket prerequisites
 
@@ -346,30 +472,41 @@ pnpm --filter @dataroom/tests exec vitest run --project gate --project contract 
 
 Tracked here rather than discovered at deploy time.
 
-- **The web app has login and nothing else.** `shared/` and `features/auth` are
-  done — client, token store, cross-tab refresh lock, error mapping, query keys,
-  UI primitives, the login screen, route guards, and the placeholder data layer.
-  `pnpm dev:web` and `pnpm build` both work. What is behind the login is two
-  placeholder screens: `explorer`, `uploads`, `viewer`, `sharing` and
-  `public-view` are not built.
-- **The API serves `/health`, five `/auth` routes, nine `/nodes` routes and four
-  share routes.** Everything except `files` and `jobs` is in, so **the product
-  works end to end on the API**: sign in, create a room and folders, issue a
-  link, open it anonymously from a second context, see only that subtree, revoke
-  it and watch it die. What is missing is `files` — nothing can be uploaded, so
-  a data room holds folders and no documents, and every folder reports
-  `subtreeFiles: 0`, correctly, because no file can exist yet.
-- **`users`, `nodes`, `shares` and `refresh_tokens` exist.** Four migrations. `job_runs` lands with `jobs`. The `nodes` storage strategy is decided —
-  materialized path, six indexes, seven CHECK constraints — see
-  [`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage.
+- ~~**The web app has login and nothing else.**~~ ~~**The web app is what is
+  missing**~~ — both stale, and left struck through rather than deleted because
+  they were the headline of this section for two revisions. All seven web
+  features are built and all twelve backend modules exist; 28 routes serve, and
+  the twenty journeys drive the product through a real browser. What is
+  unfinished is depth inside features, listed in
+  [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) §7.
+- **The scheduler must run on exactly one instance**, and that is not yet
+  enforced anywhere but in prose. `JOBS_SCHEDULER_ENABLED` is the switch; App
+  Runner `minSize: 1` / `maxSize: 1` is the thing actually being relied on and
+  nothing is deployed to set it. See [`jobs/TODO.md`](apps/api/src/jobs/TODO.md) §5
+  before scaling the API service past one instance.
+- **`users`, `nodes`, `shares`, `refresh_tokens` and `job_runs` exist** — five
+  migrations, not the four this line claimed until 2026-08-17. The `nodes`
+  storage strategy is decided — materialized path, six indexes, seven CHECK
+  constraints — see [`nodes/TODO.md`](apps/api/src/nodes/TODO.md) §Storage.
 - **`api-integration` needs Docker running.** `pnpm test` includes it, and its
   `global-setup` starts the compose service itself if it is not up, drops and
   recreates a separate `dataroom_test` database, and applies migrations with
   `migrate deploy`. CI gates on the three projects that need no database (§7).
 - ~~`pnpm typecheck` is red in `apps/web`.~~ **Resolved.** All four packages
   typecheck clean as of the first web source file. `TS18003: No inputs were
-  found` is gone, so any typecheck failure from here on is a real one.
-- **Nothing has been deployed**, so §5 is a plan and not a runbook. In
-  particular no S3 bucket has been created, so `storage` has been exercised
-  only through its in-memory adapter and `API-STORAGE-008..010` — the three
-  that need a real bucket — have never run.
+found` is gone, so any typecheck failure from here on is a real one.
+- **Nothing has been provisioned.** The build artifacts exist and both are
+  exercised locally — the API image boots, connects and uploads; the CSP in
+  `vercel.json` was proven by running all twenty journeys against the production
+  build behind it (§5). What has *not* happened is any account, bucket, Neon
+  database or service. Until it does, §5 is a runbook rather than a record.
+  ~~No S3 bucket has been created~~ — `docker-compose.test.yml` runs **MinIO**,
+  and `S3_ENDPOINT` points the adapter at it, so the upload path runs locally
+  and `API-STORAGE-008..010` finally execute. What is still untested is AWS S3
+  *specifically*: MinIO implements the same API and is not the same service.
+  One difference is already visible — the presigned PUT carries an
+  `x-amz-checksum-crc32` query parameter that MinIO ignores and S3 may not.
+- **`vercel.json` still holds two placeholder origins.** `REPLACE-WITH-APP-RUNNER-HOST`
+  and `REPLACE-WITH-BUCKET-HOST` — the first deploy fails at the rewrite, and
+  the second failure (a CSP that blocks uploads and the PDF preview) is quieter.
+  See §5.

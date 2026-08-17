@@ -169,7 +169,15 @@ is decided before this module is called), `auth`.
         source of truth
 - [x] `NodeNamingService`
   - [x] Normalize → sanitize → check → resolve
-  - [x] Retry loop on `23505`, recomputing the suffix, capped at 10 attempts
+  - [x] Retry loop on `23505`, recomputing the suffix, capped at 10 attempts.
+        **The cap only works because the candidates are spread.** With every
+        writer computing the lowest free suffix, twenty concurrent uploads of
+        one name collide in lockstep and a request burns all ten attempts — a
+        409 on an upload that should have been renamed. From the third attempt
+        the candidate is drawn from a widening random window; the first two stay
+        deterministic so an ordinary upload still numbers tidily. Found by
+        `API-FILES-017`, whose module's acceptance bar is twenty simultaneous
+        files — this cap and that bar could not both hold otherwise
 - [x] `NodesService`
   - [x] Cascade soft-delete over the whole subtree, in one transaction, emitting
         `node.deleted` with the subtree id list. **`sharing` owns the listener**
@@ -189,11 +197,14 @@ is decided before this module is called), `auth`.
         the read the comment described
 - [ ] `NodeStatsService`
   - [x] Live subtree aggregate for delete confirmation
-  - [ ] Denormalized `subtree_files` / `subtree_bytes` maintained by trigger for
-        anything rendered in a list. **Still open, and now visible**: the
-        listing serves these columns and nothing maintains them, so every folder
-        reports 0. Honest while no file can exist; a lie the moment `files`
-        lands, which is why `API-FILES-016` declares the maintenance
+  - [x] Denormalized `subtree_files` / `subtree_bytes` for anything rendered in
+        a list. **Maintained in application code, not by a trigger.** The spec
+        said trigger; `files` completes an upload inside a transaction that
+        already flips the row, so bumping the ancestors in that same statement
+        pair costs nothing and keeps the arithmetic somewhere a reader can find
+        it. A trigger would put half of this module's invariant in the schema
+        and half in `bumpRollups`, and the daily `reconcile-rollups` job is the
+        backstop either way. `API-FILES-016` covers it
 
 ## Invariants
 Invariants 1–6 in `docs/ARCHITECTURE.md` are this module's responsibility.

@@ -33,7 +33,7 @@ every row here is `security`.
 | WEB-PUBLICVIEW-018 | Editing the URL to a sibling id renders not-found | security | P1 |
 | WEB-PUBLICVIEW-019 | Deep-linking to an owner route while holding only a share token renders not-found | security | P1 |
 | WEB-PUBLICVIEW-007 | The header shows no account menu | unit | P2 |
-| WEB-PUBLICVIEW-020 | No owner name, email, or room title above the share root is rendered anywhere | security | P1 |
+| WEB-PUBLICVIEW-020 | No owner name, email, or room title above the share root is rendered anywhere | security | P0 |
 
 ### Cache isolation
 

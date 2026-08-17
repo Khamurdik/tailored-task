@@ -10,10 +10,24 @@ import {
 } from '@dataroom/shared';
 
 import { AppError } from '../common';
-import type { Node } from '../nodes';
+import type { Node } from './node.types';
 
 /**
  * The boundary between a `Node` row and the wire.
+ *
+ * ## Why this is in `nodes` rather than in a controller module
+ *
+ * It started in `tree`, beside the only controller that used it, and moved the
+ * moment `files` needed it too: `/uploads/:id/complete` answers with a
+ * `NodeDetail`, and `files` importing `tree` would be an L3 module importing its
+ * own layer — the exact shape the `sharing`/`links` split exists to avoid.
+ *
+ * `nodes` is where it belongs on reflection rather than merely where it is
+ * convenient. This module already owns the `Node` contract; the projection of
+ * that contract onto the wire is part of publishing it, and `packages/shared` is
+ * a dependency-free schema package rather than a layer, so naming it here adds
+ * no edge to the graph. The alternative was two copies of the same mapping,
+ * which is how `subtreeFiles` ends up null in one response and 0 in another.
  *
  * Every function here ends in a `parse`, not a cast. A cast asserts the shape is
  * right; a parse finds out. The difference matters most for the fields nothing

@@ -275,6 +275,162 @@ export class NodesRepository {
     return toDomain(row);
   }
 
+  /**
+   * Flips a `pending` file to `active` with the **authoritative** size and type.
+   *
+   * `updateMany` with `state: 'pending'` in the predicate, so completing an
+   * already-completed upload affects zero rows rather than silently re-writing
+   * a live file's size — `/complete` is retriable and a client that retries
+   * after a rename must not resurrect the old values.
+   */
+  async activateFile(
+    input: { id: string; sizeBytes: number; contentType: string },
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const result = await this.client(tx).node.updateMany({
+      where: { id: input.id, type: 'file', state: 'pending', deletedAt: null },
+      data: {
+        state: 'active',
+        sizeBytes: input.sizeBytes,
+        contentType: input.contentType,
+      },
+    });
+    return result.count;
+  }
+
+  /**
+   * Adds a delta to every ancestor's denormalized rollups.
+   *
+   * The ancestors are named by id rather than matched by path prefix, which is
+   * the one place in this module that reads oddly: a prefix would be the natural
+   * shape. It is by id because the *ancestors* of a node are not a prefix range —
+   * a prefix selects a subtree, and this needs the chain upward. The ids come
+   * from the path the caller already read, so it is still one query.
+   *
+   * `subtree_bytes` is `BigInt` in the schema and has to be bound as one.
+   */
+  async bumpRollups(
+    input: { ancestorIds: readonly string[]; files: number; bytes: number },
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    if (input.ancestorIds.length === 0) return 0;
+
+    const result = await this.client(tx).node.updateMany({
+      where: { id: { in: [...input.ancestorIds] } },
+      data: {
+        subtreeFiles: { increment: input.files },
+        subtreeBytes: { increment: BigInt(input.bytes) },
+      },
+    });
+    return result.count;
+  }
+
+  /**
+   * `pending` file rows older than a cutoff — the reaper's query.
+   *
+   * Matches index `nodes_pending_created`, which is partial on
+   * `WHERE state = 'pending'` precisely so this scan stays proportional to the
+   * uploads in flight rather than to the size of the tree.
+   */
+  async listStalePending(olderThan: Date, tx?: Prisma.TransactionClient): Promise<Node[]> {
+    const rows = await this.client(tx).node.findMany({
+      where: { state: 'pending', createdAt: { lt: olderThan } },
+    });
+    return rows.map(toDomain);
+  }
+
+  /**
+   * **Hard**-deletes rows, which nothing else in this module does.
+   *
+   * Legitimate only for `pending` files: a pending row is a reservation for an
+   * upload that never arrived, not a document anyone has seen, so there is
+   * nothing to restore and leaving it soft-deleted would hold its name against
+   * the partial unique index forever. The `state` predicate is in the query
+   * rather than trusted from the caller, so this cannot be pointed at a live
+   * file by mistake.
+   */
+  async hardDeletePending(ids: readonly string[], tx?: Prisma.TransactionClient): Promise<number> {
+    if (ids.length === 0) return 0;
+
+    const result = await this.client(tx).node.deleteMany({
+      where: { id: { in: [...ids] }, type: 'file', state: 'pending' },
+    });
+    return result.count;
+  }
+
+  /** Soft-deleted rows past a cutoff — the hard-delete job's query. */
+  async listDeletedBefore(cutoff: Date, tx?: Prisma.TransactionClient): Promise<Node[]> {
+    const rows = await this.client(tx).node.findMany({
+      where: { deletedAt: { not: null, lt: cutoff } },
+      // Deepest first. `parent_id` is `ON DELETE RESTRICT`, so deleting a
+      // parent before its children fails — and the failure would abort the
+      // whole sweep rather than skipping one subtree.
+      orderBy: { depth: 'desc' },
+    });
+    return rows.map(toDomain);
+  }
+
+  /**
+   * **Hard**-deletes soft-deleted rows, in the order given.
+   *
+   * The `deleted_at IS NOT NULL` predicate is in the query rather than trusted
+   * from the caller: this is the one operation in the system that destroys a
+   * document, and it must not be possible to point it at a live one.
+   */
+  async hardDeleteSoftDeleted(ids: readonly string[], tx?: Prisma.TransactionClient): Promise<number> {
+    let removed = 0;
+    for (const id of ids) {
+      const result = await this.client(tx).node.deleteMany({
+        where: { id, deletedAt: { not: null } },
+      });
+      removed += result.count;
+    }
+    return removed;
+  }
+
+  /**
+   * Recomputes every rollup from the live tree and repairs what disagrees.
+   *
+   * Silent drift is the classic failure of a denormalized counter, so this
+   * **detects and repairs in one statement** and reports both numbers. A rising
+   * repaired count against a stable drifted count means something upstream is
+   * broken and this job is papering over it — which is only visible because both
+   * are recorded.
+   *
+   * The aggregate is computed by prefix, which is what the materialized path is
+   * for, and deliberately excludes `pending` files: an upload in flight is not
+   * part of the folder's size yet.
+   */
+  async reconcileRollups(tx?: Prisma.TransactionClient): Promise<{ checked: number; repaired: number }> {
+    const client = this.client(tx);
+
+    const checked = await client.node.count({ where: { type: { not: 'file' } } });
+
+    const repaired = await client.$queryRaw<{ id: string }[]>`
+      WITH live AS (
+        SELECT ancestor."id" AS "id",
+               count(descendant."id") FILTER (WHERE descendant."type" = 'file') AS "files",
+               COALESCE(sum(descendant."size_bytes") FILTER (WHERE descendant."type" = 'file'), 0) AS "bytes"
+          FROM "nodes" ancestor
+          LEFT JOIN "nodes" descendant
+            ON descendant."path" LIKE ancestor."path" || '/%'
+           AND descendant."deleted_at" IS NULL
+           AND descendant."state" = 'active'
+         WHERE ancestor."type" <> 'file'
+         GROUP BY ancestor."id"
+      )
+      UPDATE "nodes" n
+         SET "subtree_files" = live."files"::int,
+             "subtree_bytes" = live."bytes"::bigint
+        FROM live
+       WHERE n."id" = live."id"
+         AND (n."subtree_files" <> live."files"::int OR n."subtree_bytes" <> live."bytes"::bigint)
+      RETURNING n."id"
+    `;
+
+    return { checked, repaired: repaired.length };
+  }
+
   async rename(id: string, name: string, tx?: Prisma.TransactionClient): Promise<Node> {
     return toDomain(await this.client(tx).node.update({ where: { id }, data: { name } }));
   }

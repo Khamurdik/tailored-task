@@ -1,8 +1,13 @@
+import { randomInt } from 'node:crypto';
+
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { AppError, normalizeName, sanitizeName, suggestConflictName } from '../common';
 import { NodesRepository } from './nodes.repository';
+
+/** The widest window of candidate names a single retry will consider. */
+const MAX_SPREAD = 256;
 
 @Injectable()
 export class NodeNamingService {
@@ -20,15 +25,60 @@ export class NodeNamingService {
    *
    * Read fresh on every attempt. A set captured before the first try keeps
    * proposing names that other transactions have taken since.
+   *
+   * ## Why later attempts pick a *random* free name rather than the lowest
+   *
+   * The obvious implementation — always the lowest free suffix — is a thundering
+   * herd. Twenty simultaneous uploads of `report.pdf` all read the same sibling
+   * set, all compute `report (1).pdf`, one wins, and the other nineteen retry
+   * and immediately collide again on `report (2).pdf`. The retry cap is ten, so
+   * under twenty-way contention a request can lose ten races in a row and the
+   * user gets a 409 on an upload that should simply have been renamed.
+   *
+   * That was not theoretical: `nodes/TODO.md` specifies the cap of ten and
+   * `files/TODO.md`'s acceptance bar is "20 files drag-dropped at once all
+   * land", and the two cannot both be true with deterministic candidates.
+   * `API-FILES-017` is where they met.
+   *
+   * So the first two attempts stay deterministic — with no contention, which is
+   * every ordinary upload, `report.pdf` is followed by `report (1).pdf` and the
+   * numbering is the tidy one a user expects. From the third attempt the
+   * candidate is drawn from a widening window of free names, which turns
+   * lockstep collision into a birthday problem over a space that doubles each
+   * round and converges in two or three.
+   *
+   * The cost is honest: under heavy contention the numbering has gaps —
+   * `report (7).pdf` may exist while `(3)` is free. Gap-free numbering under
+   * concurrency requires serializing every upload into one folder, which is a
+   * far worse trade than an occasional skipped number.
    */
   async nextFreeName(
     requested: string,
     parentId: string | null,
     ownerId: string,
     alsoTaken: readonly string[] = [],
+    attempt = 0,
   ): Promise<string> {
     const siblings = await this.nodes.liveSiblingNames(parentId, ownerId);
-    return suggestConflictName(requested, new Set([...siblings, ...alsoTaken]));
+    const taken = new Set([...siblings, ...alsoTaken]);
+
+    if (attempt < 2) return suggestConflictName(requested, taken);
+
+    // Doubling each round, capped so a pathological folder cannot make this
+    // walk thousands of candidates per attempt.
+    const window = Math.min(2 ** attempt, MAX_SPREAD);
+
+    const candidates: string[] = [];
+    const scratch = new Set(taken);
+    for (let index = 0; index < window; index += 1) {
+      const candidate = suggestConflictName(requested, scratch);
+      candidates.push(candidate);
+      // Added so the next iteration yields the *following* free name rather
+      // than the same one.
+      scratch.add(candidate);
+    }
+
+    return candidates[randomInt(candidates.length)] ?? candidates[0] ?? requested;
   }
 
   /**

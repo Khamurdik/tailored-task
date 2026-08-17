@@ -61,6 +61,7 @@ model User {
   sharesCreated  Share[]        @relation("ShareCreator")
   sharesReceived Share[]        @relation("SharePrincipal")
   refreshTokens  RefreshToken[]
+  jobRuns        JobRun[]
 
   @@map("users")
 }
@@ -206,6 +207,74 @@ model Share {
   @@map("shares")
 }
 
+enum JobStatus {
+  running
+  succeeded
+  failed
+  timed_out
+  skipped
+  interrupted
+
+  @@map("job_status")
+}
+
+enum JobTrigger {
+  schedule
+  manual
+
+  @@map("job_trigger")
+}
+
+/// Owned by `jobs`. One row per execution — a job run is an object you can
+/// query, not a log line you have to grep for.
+///
+/// `running` is never a resting state: every run reaches a terminal status, and
+/// the two mechanisms that guarantee it are the startup sweep (any `running` row
+/// at boot is this instance's own corpse, which is only sound because the
+/// scheduler runs on exactly one instance) and the stale-run guard (a `running`
+/// row older than its job's `timeoutMs` is dead). Without them a crash mid-run
+/// leaves a permanently `running` row and an `onOverlap: 'skip'` job then skips
+/// forever — a job that silently never runs again.
+model JobRun {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The stable slug from the registry. Not a foreign key: jobs are code, not
+  /// rows, and a run must outlive the removal of its definition — deleting the
+  /// history when a job is retired is how you lose the record of what it did.
+  jobId String @map("job_id")
+
+  trigger JobTrigger
+  status  JobStatus  @default(running)
+
+  /// Null for a scheduled run. Always set for a manual one — "who ran the
+  /// hard-delete?" must be answerable.
+  triggeredByUserId String? @map("triggered_by_user_id") @db.Uuid
+  triggeredBy       User?   @relation(fields: [triggeredByUserId], references: [id], onDelete: SetNull)
+
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  /// Computed from the two timestamps rather than from a stopwatch variable,
+  /// so it cannot disagree with them.
+  durationMs Int? @map("duration_ms")
+
+  /// Whatever the job wants to report. This is what makes a green run
+  /// *informative* rather than merely green — `{ drifted: 0 }` every day is the
+  /// only evidence the rollup counters are trustworthy.
+  result Json?
+
+  errorMessage String? @map("error_message")
+  /// Kept on the row and never put on the wire: a stack names internal paths
+  /// and library versions, and these endpoints exist to say *what* failed.
+  errorStack String? @map("error_stack")
+
+  attempt Int @default(1)
+
+  /// Every read is "recent runs for this job".
+  @@index([jobId, startedAt(sort: Desc)])
+  @@map("job_runs")
+}
+
 /// Owned by `auth`. One row per issued refresh token.
 ///
 /// Only a SHA-256 is stored; the plaintext lives on the client. `familyId` is
@@ -237,5 +306,17 @@ model RefreshToken {
 
   @@index([familyId])
   @@index([userId])
+  /// `purge-expired-tokens` sweeps by expiry.
+  ///
+  /// Declared **here** as well as in `add_refresh_tokens`' hand-written SQL, and
+  /// that duplication is the point. The other hand-written indexes in this
+  /// schema are partial, or carry an operator class or an explicit collation —
+  /// none of which Prisma can represent, so it leaves them alone. This one is a
+  /// plain single-column btree, which Prisma *can* represent, so an index that
+  /// exists in the database and not in this file reads to `migrate dev` as
+  /// drift: the next generated migration silently contained
+  /// `DROP INDEX "refresh_tokens_expires_at"`, which would have removed the
+  /// index the purge job is built on.
+  @@index([expiresAt])
   @@map("refresh_tokens")
 }

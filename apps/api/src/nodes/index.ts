@@ -6,4 +6,5 @@ export {
   type ListChildrenInput,
 } from './nodes.service';
 export { NodeNamingService } from './node-naming.service';
+export { toBreadcrumb, toChildrenPage, toDetail, toSummary } from './node.presenter';
 export type { Ancestry, Node, NodeSnapshot, NodeState, NodeType, SubtreeStats } from './node.types';

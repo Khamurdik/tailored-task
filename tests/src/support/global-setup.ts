@@ -51,9 +51,17 @@ function psql(sql: string): string {
   return run('docker', ['exec', 'dataroom-postgres', 'psql', IN_CONTAINER_ADMIN_URL, '-tAc', sql]);
 }
 
-function isContainerHealthy(): boolean {
+/**
+ * Both services, not just Postgres.
+ *
+ * MinIO joined the compose file so the three bucket-dependent storage
+ * declarations could finally run. Checking only Postgres meant that on a machine
+ * where Postgres happened to be up already, compose was skipped and those tests
+ * failed with a connection error rather than starting what they needed.
+ */
+function isContainerHealthy(container: string): boolean {
   try {
-    return run('docker', ['inspect', '-f', '{{.State.Health.Status}}', 'dataroom-postgres']).trim() === 'healthy';
+    return run('docker', ['inspect', '-f', '{{.State.Health.Status}}', container]).trim() === 'healthy';
   } catch {
     return false;
   }
@@ -64,7 +72,7 @@ export default async function setup(): Promise<void> {
     throw new Error(`Missing ${COMPOSE_FILE}. The integration suite needs a database.`);
   }
 
-  if (!isContainerHealthy()) {
+  if (!isContainerHealthy('dataroom-postgres') || !isContainerHealthy('dataroom-minio')) {
     // Started here rather than required to be running, so `pnpm test` works on
     // a clean checkout. Idempotent — compose is a no-op if it is already up.
     run('docker', ['compose', '-f', COMPOSE_FILE, 'up', '-d']);
@@ -72,11 +80,12 @@ export default async function setup(): Promise<void> {
     // The healthcheck matters: `pg_isready` returns true while the server is
     // still running first-time initialisation, so connecting immediately fails
     // with an error that looks like bad credentials.
-    for (let attempt = 0; attempt < 45; attempt += 1) {
-      if (isContainerHealthy()) break;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (isContainerHealthy('dataroom-postgres') && isContainerHealthy('dataroom-minio')) break;
       await new Promise((done) => setTimeout(done, 1000));
     }
-    if (!isContainerHealthy()) throw new Error('Postgres did not become healthy in 45s');
+    if (!isContainerHealthy('dataroom-postgres')) throw new Error('Postgres did not become healthy');
+    if (!isContainerHealthy('dataroom-minio')) throw new Error('MinIO did not become healthy');
   }
 
   // Dropped and recreated, so every run starts from the migrations rather than

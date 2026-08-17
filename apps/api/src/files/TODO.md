@@ -20,21 +20,52 @@ The `pending → active` transition and its failure modes.
 `sharing`, `search`.
 
 ## Responsibilities
-- [ ] `POST /uploads/init`
-  - [ ] Validate size against `MAX_FILE_SIZE` and declared content type
-  - [ ] Resolve the name conflict and **insert the node row as `pending` now** —
+- [x] `POST /uploads/init`
+  - [x] Validate size against `MAX_FILE_SIZE` and declared content type
+  - [x] Resolve the name conflict and **insert the node row as `pending` now** —
         the unique index then protects the name for the whole upload window
-  - [ ] Return `{ nodeId, uploadUrl, finalName }`
-- [ ] `POST /uploads/:id/complete`
-  - [ ] `HeadObject` to verify the object exists
-  - [ ] Take `size_bytes` and `content_type` **from S3**, never from the client
-  - [ ] Enforce `UPLOAD_FILE_POLICY` — see below. Under `pdf-only`, read the
+  - [x] Return `{ nodeId, uploadUrl, finalName }`
+- [x] `POST /uploads/:id/complete`
+  - [x] `HeadObject` to verify the object exists
+  - [x] Take `size_bytes` and `content_type` **from S3**, never from the client
+  - [x] Enforce `UPLOAD_FILE_POLICY` — see below. Under `pdf-only`, read the
         first bytes of the object and reject anything not starting `%PDF-`
-  - [ ] Flip to `active`, bump ancestor rollups
-- [ ] `POST /uploads/:id/abort` — best-effort cleanup on user cancel
-- [ ] `GET /nodes/:id/content-url` — permission-checked, 60s presigned GET
-- [ ] `reapPending` — delete `pending` nodes older than 1h, returning the counts
+  - [x] Flip to `active`, bump ancestor rollups — **in one transaction**, since
+        a counter bumped outside the flip drifts on any failure between them
+- [x] `POST /uploads/:id/abort` — best-effort cleanup on user cancel
+- [x] `GET /nodes/:id/content-url` — permission-checked, 60s presigned GET
+- [x] `reapPending` — delete `pending` nodes older than 1h, returning the counts
       so a job run reports what it actually did rather than just "succeeded"
+
+## Implementation notes
+
+- [x] **`StoragePort` had no way to read an object.** The policy check needs the
+      first five bytes and the port exposed `presignPut`, `presignGet`, `head`,
+      `delete` and `copy` — none of which returns any. Added as
+      `readPrefix(key, maxBytes)`, deliberately a *prefix* read rather than a
+      `get`: the check needs five bytes, and a port method returning a whole
+      object is one that an unrelated caller eventually uses to stream a 50 MiB
+      file through the API, which is the thing presigned URLs exist to avoid.
+      The in-memory adapter's test-only `get()` already carried the comment "so
+      `/complete`'s magic-byte check can be exercised", so the need had been
+      anticipated and the port method simply never written.
+- [x] **The name-conflict retry could not survive twenty concurrent uploads.**
+      Every writer computed the same lowest free suffix, collided in lockstep,
+      and burned the ten-attempt cap — a 409 on an upload that should have been
+      renamed. This module's "done when" is twenty simultaneous files and
+      `nodes/TODO.md` fixes the cap at ten; the two could not both hold with
+      deterministic candidates. `NodeNamingService.nextFreeName` now spreads its
+      candidates over a widening random window from the third attempt, so the
+      ordinary no-contention case still numbers tidily.
+- [x] **`/complete` is idempotent.** `activateFile` matches on
+      `state: 'pending'`, so a retried call affects zero rows and the ancestors'
+      rollups are not incremented twice. A client that retries after a network
+      blip is the ordinary case, not an edge one.
+- [x] **Abort refuses a completed upload.** Deleting a live document through the
+      cancel button of a finished transfer is a surprising way to lose a file.
+- [x] The node presenter moved from `tree` to `nodes` when this module needed it
+      too — `files` importing `tree` would be an L3 module importing its own
+      layer.
 
 ## File type policy — enforced, and switchable
 

@@ -133,7 +133,22 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   // the services without the request pipeline they run behind — which is most of
   // what an integration test is for.
   const http = configureApp(module.createNestApplication(), config as AppConfig);
-  await http.init();
+
+  /**
+   * **Listening on an ephemeral port, rather than `init()`.**
+   *
+   * `supertest(server)` calls `listen(0)` itself when the server it is handed is
+   * not already listening — so a suite firing requests concurrently races twenty
+   * `listen` calls against one server and gets `ECONNRESET` / `ECONNREFUSED`.
+   * That is not a hypothetical: it cost two debugging rounds, once in `links`
+   * and again in `files`, and the second time the concurrency *was* the subject
+   * of the test (`API-FILES-017`, twenty simultaneous uploads) so there was no
+   * sequential workaround to fall back on.
+   *
+   * Binding once here makes supertest reuse the address, so a test that needs
+   * genuine parallelism gets it and a test that does not is unaffected.
+   */
+  await http.listen(0);
 
   const prisma = module.get(PrismaService);
 
@@ -176,5 +191,10 @@ function unlimitedThrottlerStorage(): ThrottlerStorage {
  * where a delete order that works today breaks when a column is added.
  */
 export async function resetDatabase(prisma: PrismaService): Promise<void> {
-  await prisma.$executeRawUnsafe('TRUNCATE TABLE "nodes", "users" CASCADE');
+  // `job_runs` is listed explicitly because it is **not** reached by the
+  // cascade: `triggered_by_user_id` is `ON DELETE SET NULL`, so truncating
+  // `users` nulls the column and leaves the history behind. That is correct
+  // behaviour for the column and a leak between test files, which is exactly
+  // the kind of thing a per-file reset is supposed to remove.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "job_runs", "nodes", "users" CASCADE');
 }

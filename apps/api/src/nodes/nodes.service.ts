@@ -187,6 +187,100 @@ export class NodesService {
   }
 
   /**
+   * Creates a **`pending`** file row, reserving its name for the upload window.
+   *
+   * Inserting now rather than at `/complete` is the whole trick: the partial
+   * unique index protects the name while the bytes are in flight, so twenty
+   * simultaneous drops of `report.pdf` resolve to twenty names immediately
+   * instead of racing at the end, when nineteen uploads have already been spent.
+   *
+   * It goes through the same `insertWithUniqueName` retry as a folder, so the
+   * concurrency behaviour cannot drift between the two — `API-NODES-011` and
+   * `API-FILES-002` are the same property reached from two directions.
+   */
+  async createPendingFile(parentId: string, name: string): Promise<Node> {
+    const parent = await this.requireContainer(parentId);
+    this.assertDepth(parent.node.depth + 1, 0);
+
+    return this.insertWithUniqueName(name, parent.node.id, parent.node.ownerId, (unique, tx) =>
+      this.nodes.createChild(
+        { id: randomUUID(), type: 'file', parent: parent.withPath, name: unique, state: 'pending' },
+        tx,
+      ),
+    );
+  }
+
+  /**
+   * Completes an upload: `pending → active`, with the ancestors' rollups moved
+   * in the **same transaction**.
+   *
+   * One transaction because the two halves are one fact. A counter that is
+   * bumped outside the flip drifts on any failure between them, and a
+   * denormalized counter that drifts is the classic failure of the pattern —
+   * which is why `reconcile-rollups` exists to detect it and why this does not
+   * rely on that job to be correct.
+   *
+   * Returns null when the row was not pending, so a retried `/complete` is a
+   * no-op rather than a second increment.
+   */
+  async completeFile(input: {
+    id: string;
+    sizeBytes: number;
+    contentType: string;
+  }): Promise<Node | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const ancestry = await this.nodes.findAncestry(input.id, tx);
+      if (ancestry === null) return null;
+
+      const flipped = await this.nodes.activateFile(input, tx);
+      if (flipped === 0) return null;
+
+      await this.nodes.bumpRollups(
+        { ancestorIds: ancestry.ancestorIds, files: 1, bytes: input.sizeBytes },
+        tx,
+      );
+
+      return this.nodes.findById(input.id, tx);
+    });
+  }
+
+  /**
+   * Drops a `pending` file row, freeing its name immediately.
+   *
+   * Hard, not soft. A pending row is a reservation for an upload that never
+   * arrived rather than a document anyone has seen, so there is nothing to
+   * restore — and a soft delete would hold the name against the partial unique
+   * index until the hard-delete job caught up thirty days later.
+   */
+  async discardPendingFile(id: string): Promise<boolean> {
+    return (await this.nodes.hardDeletePending([id])) > 0;
+  }
+
+  /** Soft-deleted rows past a cutoff, deepest first. The hard-delete job's input. */
+  async deletedBefore(cutoff: Date): Promise<Node[]> {
+    return this.nodes.listDeletedBefore(cutoff);
+  }
+
+  /** Destroys soft-deleted rows for good. Only ever called by `hard-delete-expired`. */
+  async hardDelete(ids: readonly string[]): Promise<number> {
+    return this.nodes.hardDeleteSoftDeleted(ids);
+  }
+
+  /** Recomputes every rollup from the live tree and repairs what disagrees. */
+  async reconcileRollups(): Promise<{ checked: number; repaired: number }> {
+    return this.nodes.reconcileRollups();
+  }
+
+  /** `pending` rows older than the cutoff. The reaper's input. */
+  async stalePendingFiles(olderThan: Date): Promise<Node[]> {
+    return this.nodes.listStalePending(olderThan);
+  }
+
+  async discardPendingFiles(ids: readonly string[]): Promise<number> {
+    return this.nodes.hardDeletePending(ids);
+  }
+
+  /**
    * Inserts, resolving a name collision by retrying with a suffix.
    *
    * ## Each attempt is its own transaction, and that is the whole point
@@ -224,7 +318,11 @@ export class NodesService {
         if (!isUniqueViolation(cause)) throw cause;
 
         attempted.push(candidate);
-        candidate = await this.naming.nextFreeName(base, parentId, ownerId, attempted);
+        // The attempt number matters: `nextFreeName` stays deterministic for
+        // the first couple of rounds and then spreads its candidates, which is
+        // what stops twenty concurrent uploads of one name colliding in
+        // lockstep until the cap runs out. See its comment.
+        candidate = await this.naming.nextFreeName(base, parentId, ownerId, attempted, attempt + 1);
       }
     }
 

@@ -38,3 +38,15 @@
 | WEB-VIEWER-005 | Loading and unsupported-type states render | unit | P1 |
 | WEB-VIEWER-017 | The viewer offers no delete or rename affordance in a share view | security | P1 |
 | WEB-VIEWER-018 | A non-PDF content type renders the unsupported-type state and never an `<iframe>` | security | P0 |
+| WEB-VIEWER-019 | The frameable check compares the media type, so `application/pdf; charset=binary` still previews | unit | P1 |
+
+## Notes
+- WEB-VIEWER-018 is asserted by querying for the frame's **absence in the DOM**,
+  not by checking a computed flag. A component that worked out `frameable`
+  correctly and rendered the frame anyway would pass any test of the flag, and
+  the property is about what ends up on the page.
+- WEB-VIEWER-019 was added while implementing. The check is a positive match on
+  one media type rather than a blocklist — a blocklist is wrong the day a new
+  type is added — and a naive equality against the whole header would send a
+  perfectly ordinary `application/pdf; charset=binary` down the unsupported
+  path.

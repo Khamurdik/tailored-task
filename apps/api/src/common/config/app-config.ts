@@ -35,6 +35,9 @@ export interface AppConfig {
     readonly accessKeyId: string | undefined;
     readonly secretAccessKey: string | undefined;
     readonly presignGetTtlSeconds: number;
+    /** Undefined means real AWS. Set for a local S3-compatible bucket. */
+    readonly endpoint: string | undefined;
+    readonly forcePathStyle: boolean;
   };
   readonly corsOrigins: readonly string[];
 }
@@ -91,6 +94,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       accessKeyId: env.AWS_ACCESS_KEY_ID,
       secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
       presignGetTtlSeconds: env.S3_PRESIGN_GET_TTL_SECONDS,
+      endpoint: env.S3_ENDPOINT,
+      // Defaulted from the endpoint rather than required alongside it: a custom
+      // endpoint essentially always wants path style, and making an operator
+      // set both is one more way a local setup fails with a DNS error.
+      forcePathStyle: env.S3_FORCE_PATH_STYLE ?? env.S3_ENDPOINT !== undefined,
     },
     corsOrigins: env.CORS_ORIGINS,
   };

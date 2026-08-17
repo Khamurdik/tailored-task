@@ -20,20 +20,24 @@ uploads die on navigation.
 `explorer`. The dropzone is composed into the explorer route, not imported by it.
 
 ## Responsibilities
-- [ ] `react-dropzone`; the whole content area is a drop target, with a clear
-      overlay on drag-over
-- [ ] Per-file state machine: `queued → initializing → uploading → completing → done | error | cancelled`
-- [ ] Real progress via XHR `onUploadProgress` — this is the payoff for
-      presigned direct-to-S3 uploads, so make sure it is visibly smooth
-- [ ] Concurrency cap of 3. An unbounded queue on a 200-file drop renders 200
+- [x] `react-dropzone`; the whole content area is a drop target, with a clear
+      overlay on drag-over — **plus a visible "Upload files" button**, because
+      dragging is undiscoverable, impossible on touch, and awkward with a screen
+      reader. For most people the button is the primary path, not the fallback
+- [x] Per-file state machine: `queued → initializing → uploading → completing → done | error | cancelled`
+- [x] Real progress via `onUploadProgress` — axios's wrapper over the XHR
+      upload event, so the number is a real byte count rather than a timer
+- [x] Concurrency cap of 3. An unbounded queue on a 200-file drop renders 200
       simultaneous 0% bars and looks broken.
-- [ ] `AbortController` per file; cancel calls `/abort`
-- [ ] Retry on a failed file without re-dropping
-- [ ] Show "finalizing" between 100% and the `/complete` response — otherwise
+- [x] `AbortController` per file; cancel calls `/abort`
+- [x] Retry on a failed file without re-dropping — **from `init`**, not from the
+      presigned URL, since an expired URL is the usual reason a retry is needed
+- [x] Show "finalizing" between 100% and the `/complete` response — otherwise
       the bar sits full while nothing appears to happen
-- [ ] `beforeunload` warning while transfers are in flight
-- [ ] Invalidate the target folder's children on each completion, not once at the end
-- [ ] Surface the resolved name when it differs: "uploaded as report (2).pdf"
+- [x] `beforeunload` warning while transfers are in flight, and **only** then —
+      an always-registered handler trains people to click through it
+- [x] Invalidate on each completion, not once at the end
+- [x] Surface the resolved name when it differs: "uploaded as report (2).pdf"
 
 ## Showing the queue in other tabs
 
@@ -80,3 +84,27 @@ still completes and reports every result.
 
 > These are the **requirements**. They are declared as addressable, traceable tests in
 > [`tests/suites/web/uploads/TODO.md`](../../../../../tests/suites/web/uploads/TODO.md) and implemented there — never in this module's folder.
+
+## Implementation notes
+
+- [x] **The bytes travel on their own axios instance, and that is load-bearing
+      twice over.** It carries no credential — the app's `api` client attaches a
+      bearer or share token to every request, and sending one to a storage host
+      puts a session token in somebody else's access log; the signature in the
+      presigned URL is the entire authorization. And it goes through
+      `installMockTransport`, so the placeholder data layer answers the fake
+      `mock://uploads/...` PUT.
+
+      The first version used a bare `XMLHttpRequest`, which bypasses the axios
+      adapter entirely. It would have worked against a real bucket and failed
+      silently in `VITE_API_MODE=mock` — which is the only mode anyone can run
+      today, since no S3 bucket exists. Found by a user trying to drag a file in.
+- [x] **The runner and the panel are mounted above the router**, outside
+      `<Routes>`. Inside a route, navigating into a folder unmounts them and
+      every transfer dies — which is `WEB-UPLOADS-001` and the bug that makes
+      people re-drop files and end up with duplicates.
+- [x] The abort handles and the started-set are **module-level**, not refs. Two
+      different parts of the tree need to reach a running transfer, and the first
+      draft had a private ref in the runner plus a second map for the cancel
+      button — never connected, so cancelling marked an item cancelled while its
+      bytes kept going.

@@ -39,3 +39,52 @@ services:
       # mount/volume", refuse to initialise, and exit 1 — which reads as a
       # corrupt-data warning rather than as a misconfigured mount.
       - /var/lib/postgresql
+
+  # ---------------------------------------------------------------------------
+  # An S3-compatible bucket, so the upload path can be exercised locally and by
+  # the journeys.
+  #
+  # Added because `storage` had only ever run against its in-memory twin: the
+  # presigned PUT, the `HeadObject` at `/complete`, the magic-byte range read and
+  # the `Content-Disposition` on download are the four things that cannot be
+  # proven without a real bucket, and three of them are security-relevant.
+  #
+  # MinIO rather than localstack: it is the S3 API and nothing else, which is all
+  # this needs, and it starts in about a second.
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: dataroom-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: dataroom
+      MINIO_ROOT_PASSWORD: dataroom-secret
+      # The browser PUTs directly to this host from the app's origin, so the
+      # bucket has to allow it. Without this every upload fails at the preflight
+      # with an error that names no cause.
+      MINIO_API_CORS_ALLOW_ORIGIN: '*'
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /data
+
+  # Creates the bucket and exits. A one-shot container rather than a shell step
+  # in the harness, so `docker compose up` is the whole setup.
+  minio-init:
+    image: minio/minio:latest
+    container_name: dataroom-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 dataroom dataroom-secret &&
+      mc mb --ignore-existing local/dataroom &&
+      echo 'bucket ready'
+      "

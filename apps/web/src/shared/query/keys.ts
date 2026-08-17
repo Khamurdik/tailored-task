@@ -28,6 +28,16 @@ export const queryKeys = {
         ? (['nodes', 'children', id] as const)
         : (['nodes', 'children', id, cursor] as const),
     stats: (id: string) => ['nodes', 'stats', id] as const,
+    /**
+     * The signed download URL, keyed by **node id and nothing else**.
+     *
+     * The URL itself is a bearer credential with a 60-second life, and a query
+     * key is the one structure react-query will happily serialise into a
+     * devtools panel. Keying by it would also make every refetch a different
+     * cache entry, so the "never cached" rule would be enforced by accident
+     * rather than on purpose — see `WEB-VIEWER-013`.
+     */
+    content: (id: string) => ['nodes', 'content', id] as const,
   },
 
   shares: {

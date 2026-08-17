@@ -1,0 +1,61 @@
+# The build context is the repository root (see apps/api/Dockerfile), so this
+# file is what keeps that context from being the whole working tree.
+#
+# Note the shape: node_modules and build output are excluded because the image
+# builds its own, and a host `node_modules` copied into a Linux image is also a
+# good way to ship the wrong platform's native bindings.
+
+# ---------- dependencies and build output ----------
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# ---------- secrets ----------
+# A .env in the context can be COPYed by accident, and layers are readable by
+# anyone who pulls the image.
+.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# ---------- vcs and tooling ----------
+.git
+.gitignore
+.gitattributes
+.github
+.claude
+.vscode
+.idea
+
+# ---------- tests ----------
+# Not installed by the image (the Dockerfile filters them out of the install)
+# and not runnable in it. Playwright's browsers alone are larger than the image.
+tests
+**/test-results
+**/playwright-report
+**/blob-report
+
+# ---------- the web app ----------
+# Deployed to Vercel from source, not from this image.
+apps/web
+
+# The two manifests above are the exception, and they are not optional:
+# `pnpm install --frozen-lockfile` validates the lockfile against every
+# importer in the workspace, so a missing manifest fails the install rather
+# than shrinking it. Only the manifests come back — no sources, no Playwright.
+!tests/package.json
+!apps/web/package.json
+
+# ---------- docs ----------
+*.md
+docs
+
+# ---------- local scratch ----------
+tmp
+temp
+scratch
+*.log
+docker-compose*.yml
