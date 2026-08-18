@@ -29,3 +29,15 @@ allowBuilds:
 #   esbuild        — Vite 8 bundles with rolldown, not esbuild
 #   unrs-resolver  — not a dependency of anything here
 # Re-add them if either ever appears.
+
+# Fail the install when the running Node does not satisfy `engines.node`,
+# rather than printing a warning nobody reads.
+#
+# This lives here and NOT in `.npmrc`, for the same reason `allowBuilds` does:
+# pnpm 11 reads its settings from this file. `.npmrc` still carries
+# `engine-strict=true` from npm-era habit and pnpm 11 ignores it completely —
+# `pnpm config get engine-strict` returned `undefined` with only that line
+# present, and an install on Node 26 against an `engines` of `24.x` printed
+# `[WARN] Unsupported engine` and **exited 0**. Verified 2026-08-18, the second
+# silent no-op found in this file's neighbourhood.
+engineStrict: true

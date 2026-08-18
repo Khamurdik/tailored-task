@@ -26,20 +26,33 @@ and `pnpm lint` are green across all four packages.
 
 | | Version | Note |
 | --- | --- | --- |
-| Node | **26.7.0** | `.nvmrc`. Node 26 is Current, not LTS until 2026-10-28 |
+| Node | **26.7.0** for development; **`>=24.15.0`** is the `engines` floor | `.nvmrc` pins 26.7.0. Node 26 is Current, not LTS until 2026-10-28, so 24 LTS is supported and verified — see §6 |
 | pnpm | **11.22.0** | `packageManager` field; pnpm 10+ self-switches |
 | Postgres | **18** | local via `docker-compose`, hosted via Neon |
 | Docker | any recent | only for the local database and the integration tests |
 
-**Corepack does not work.** It was unbundled from Node 25+, so `corepack enable`
-is not the install path. Use `npm i -g pnpm` — and note that under nvm, global
-packages are per-Node-version, so pnpm has to be installed while 26 is active.
+**Corepack does not work on 26.** It was unbundled from Node 25+, so
+`corepack enable` is not the install path there. Use `npm i -g pnpm` — and note
+that under nvm, global packages are per-Node-version, so pnpm has to be installed
+while 26 is active.
 
 ```bash
 nvm install 26.7.0 && nvm use 26.7.0
 npm i -g pnpm
 pnpm install
 ```
+
+On **Node 24 LTS**, which the `engines` floor now admits, Corepack is still
+bundled and is the shorter path:
+
+```bash
+nvm install 24.19.0 && nvm use 24.19.0
+corepack enable          # self-switches to pnpm 11.22.0 via `packageManager`
+pnpm install
+```
+
+Both were run on 2026-08-18. Development is expected to stay on 26 — `.nvmrc`
+says so — and 24 exists for deploy targets that only offer LTS.
 
 **Do not run `ncu -u` on this repo.** Four versions are held deliberately
 (TypeScript 6, Prisma 6, and two others — see [docs/TOOLCHAIN.md](docs/TOOLCHAIN.md));
@@ -376,11 +389,10 @@ the CSP with no `unsafe-inline`", which is about scripts.
 The Google directives (`accounts.google.com/gsi/*`) can be deleted outright if
 Google sign-in stays disabled; nothing else references them.
 
-One constraint to check before the first deploy: **`engines.node` is
-`>=26.0.0`**, and Vercel may not offer Node 26 yet. The web build is static
-output, so building it on 24 costs nothing — but the engines floor has to be
-relaxed to `>=24.15.0` for that to be allowed, which is the same move §6
-describes for the API.
+~~One constraint to check before the first deploy: `engines.node` is
+`>=26.0.0`, and Vercel may not offer Node 26 yet.~~ **Resolved 2026-08-18** — the
+floor is `>=24.15.0`, so Vercel building on Node 24 LTS is allowed and the web
+build is static output either way. Nothing else needs to change for that.
 
 ### S3 bucket prerequisites
 
@@ -445,9 +457,19 @@ no `unsafe-eval`.
 
 ### Node 26 is Current, not LTS
 
-Until 2026-10-28. If a deploy target only offers LTS images, run 24 there and
-relax the `engines.node` floor to `>=24.15.0`. All 68 pinned packages were
-checked; none exclude either version.
+Until 2026-10-28. ~~If a deploy target only offers LTS images, run 24 there and
+relax the `engines.node` floor to `>=24.15.0`.~~ **Done, 2026-08-18** — the floor
+is `>=24.15.0` in all five manifests, so an LTS-only target is no longer blocked.
+`.nvmrc` still pins development to 26.7.0; 24 is permitted, not preferred.
+
+The whole stack was re-verified on **24.19.0** rather than assumed: install under
+`engine-strict`, typecheck, lint, build, 377 tests and the 20 journeys, plus the
+two type-stripped entry points (`prisma/seed.ts` and the registry CLI) that were
+designed against Node 26's rules. All 68 pinned packages were checked; none
+exclude either version, and `24.15.0` is `jsdom@30`'s own floor on the 24 line.
+
+One difference between the lines, which is why §1 lists two install paths:
+**`corepack enable` works on 24** and does not on 26+.
 
 ---
 

@@ -11,7 +11,7 @@ constraints across the five `package.json` files resolve with zero conflicts.
 
 | | Version | Why |
 | --- | --- | --- |
-| Node | **26.7.0** (`.nvmrc`) | Chosen deliberately. See the caveat below. |
+| Node | **26.7.0** (`.nvmrc`), floor `>=24.15.0` | Development runs 26; the `engines` floor admits Node 24 LTS. See the caveat below. |
 | pnpm | **11.22.0** | Workspaces without a separate task runner. |
 
 All 68 pinned packages were checked against Node 26: 35 declare `engines.node`
@@ -23,14 +23,44 @@ and **none exclude it**. `jsdom@30` is the fussiest
 v26 released 2026-05-05 and becomes Active LTS on **2026-10-28**, roughly ten
 weeks out. Until then it gets the Current line's faster, more disruptive
 release cadence. Nothing in this stack objects; the only real consequence is
-Corepack, below. If a deployment target (App Runner, Docker base image) only
-offers LTS tags, pin the container to Node 24 and keep 26 locally — the
-`engines` floor is `>=26.0.0`, so relax it to `>=24.15.0` if you need both.
+Corepack, below.
+
+**The `engines` floor was relaxed from `>=26.0.0` to `>=24.15.0` on 2026-08-18**,
+in all five manifests, so a deployment target that only offers LTS tags is no
+longer blocked. `.nvmrc` still says 26.7.0: development stays on 26 and 24 is
+*permitted*, not preferred.
+
+`24.15.0` is not a round number picked for looks. It is `jsdom@30`'s floor on the
+24 line — its range is `^22.22.2 || ^24.15.0 || >=26.0.0`, which makes it the
+lowest Node 24 the test stack actually installs under.
+
+Anything below the floor now fails at `pnpm install` rather than midway through a
+suite — but **that was not true when this line was first written.** The guard was
+`engine-strict=true` in `.npmrc`, which pnpm 11 ignores: it reads its settings
+from `pnpm-workspace.yaml`, exactly as it does for `allowBuilds`. An install on
+Node 26 against an `engines` of `24.x` printed `[WARN] Unsupported engine` and
+exited **0**. The working key is `engineStrict: true` in `pnpm-workspace.yaml`,
+added 2026-08-18 and checked in all three directions: it passes on 26.7.0 and
+24.19.0 and fails on 20.15.0 with `ERR_PNPM_UNSUPPORTED_ENGINE`.
+
+**Verified on 24.19.0 (Latest LTS), not assumed.** Install under `engine-strict`,
+`pnpm -r typecheck`, `pnpm lint`, `pnpm build`, 377 tests across all four real
+Vitest projects, and the 20 Playwright journeys — all green. The two entry points
+that matter most were checked by running them, because both were designed against
+Node 26's type-stripping rules and neither is exercised by a compiler:
+`prisma/seed.ts` (the strip-safe zone) and `tests/src/registry/cli.ts`. The API
+image also builds and serves on a `node:24-slim` base (588 MB against 593 MB),
+though `apps/api/Dockerfile` stays on 26 — see DEPLOYMENT.md §5.
 
 ### Corepack is gone from Node 25+
 
 **`corepack enable` does not work on Node 26.** Corepack shipped with Node from
 14.19.0 up to — but not including — 25.0.0. It is now a standalone package.
+
+**On Node 24 it does work**, and is the shorter path there: `corepack enable`
+followed by any pnpm command self-switches to 11.22.0 from the `packageManager`
+field. Verified 2026-08-18. This is the one place where the two supported Node
+lines need different instructions.
 
 pnpm 10+ reads the `packageManager` field itself
 (`manage-package-manager-versions`, on by default), so the simplest path is to

@@ -113,9 +113,14 @@ Verified against the npm registry on 2026-08-16.
 ### 3.3 Runtime — Node 26
 - `.nvmrc` = **26.7.0**. All 68 pinned packages checked; 35 declare
   `engines.node` and none exclude 26.
-- **Node 26 is Current, not LTS** until 2026-10-28. If a deploy target only
-  offers LTS images, run 24 there and relax the `engines` floor to `>=24.15.0`.
-- **Corepack is unbundled from Node 25+.** `corepack enable` does not work.
+- **Node 26 is Current, not LTS** until 2026-10-28. ~~If a deploy target only
+  offers LTS images, run 24 there and relax the `engines` floor to
+  `>=24.15.0`.~~ **Taken, 2026-08-18**, on the user's instruction: the floor is
+  `>=24.15.0` in all five manifests and the stack is verified on 24.19.0.
+  `.nvmrc` still says 26.7.0 — 24 is permitted, not preferred. `24.15.0` is
+  `jsdom@30`'s floor on that line, not a round number.
+- **Corepack is unbundled from Node 25+.** `corepack enable` does not work
+  *on 26*; it does work on 24, which is now a supported line.
   Use `npm i -g pnpm`; pnpm 10+ self-switches via the `packageManager` field.
 - Under nvm, globals are per-Node-version, so pnpm must be installed under 26.
 
@@ -589,6 +594,13 @@ have:
   All four verified by execution, not by reading docs. See §3.4.
 - pnpm 10+ blocks dependency lifecycle scripts — allowlist is in
   `pnpm-workspace.yaml` (`onlyBuiltDependencies`).
+- **`engine-strict=true` in `.npmrc` is the second silent no-op of the same
+  kind.** pnpm 11 reads settings from `pnpm-workspace.yaml`, so the guard that
+  was supposed to refuse an unsupported Node only printed `[WARN] Unsupported
+  engine` and exited 0 — an install on Node 26 against `engines: "24.x"`
+  succeeded. The working key is `engineStrict: true` in `pnpm-workspace.yaml`.
+  Found 2026-08-18 while checking whether pinning the Node major for Vercel
+  would break local development; it would have, and nothing would have said so.
 - Tailwind v4 has no config file; theme lives in `apps/web/src/index.css`.
   `tailwindcss-animate` → `tw-animate-css`; `tailwind-merge` must be v3.
 
