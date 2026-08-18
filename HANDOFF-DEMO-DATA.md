@@ -50,6 +50,12 @@ Two further identities that are not accounts:
 | **link** | A share token in an `X-Share-Token` header, or the URL `/s/VBHV2KVG5Y9F5WZ9` | A stranger with a link, holding no account at all |
 | **anon** | No credential of any kind | The default: nothing is visible |
 
+Note for anyone drawing a "what each person sees when they sign in" view: **Cara
+and Dmytro land on an empty room list.** `GET /nodes` returns only rooms the
+caller *owns*, and they own none — there is no "shared with me" listing in this
+build, so an invited user reaches their folder by direct link only. Their access
+is real; it is just not discoverable from the UI.
+
 ---
 
 ## 3. The tree
@@ -147,9 +153,13 @@ Four findings worth making visible, in rough order of how surprising they are to
 someone who has not thought about permission scoping:
 
 1. **Cara reads `Financials` but gets `404` on `Project Meridian` above it.**
-   Access flows *down* a subtree, never up. Her breadcrumb trail begins at
-   `Financials` — the room's name is itself information, and a visitor never
-   receives it.
+   Access flows *down* a subtree, never up.
+
+   One caveat, found while verifying this data: her **breadcrumb** still names
+   the room (`Project Meridian / Financials`), even though the room itself
+   returns 404 to her. The anonymous link visitor *is* correctly truncated to
+   `["Teaser"]`. If you visualise breadcrumbs, do not draw them as truncated for
+   user grants — that is the bug, not the behaviour.
 2. **Cara and Dmytro cannot see each other's folder**, despite being in the same
    room, invited by the same owner, with the same role.
 3. **Ana and Bo are mutually invisible**, including each other's room ids.

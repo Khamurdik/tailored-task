@@ -74,9 +74,13 @@ identity against the live API. **200 = visible, 404 = not.**
 Four things worth noticing in that table:
 
 - **Cara can read `Financials` but not the room above it.** A grant scopes to a
-  subtree, and the ancestors it hangs from stay invisible. Her breadcrumb trail
-  starts at `Financials`, not at `Project Meridian` — the room's name is itself
-  information, and a visitor never receives it.
+  subtree, and the ancestors it hangs from stay invisible: `GET` on the room's id
+  returns 404 for her.
+
+  **But her breadcrumb still names it** — `Project Meridian / Financials` — which
+  is a real leak, found while verifying this page. See "A defect this demo
+  exposed" below. The anonymous link visitor is correctly truncated to `Teaser`;
+  the user-grant holder is not.
 - **Cara and Dmytro cannot see each other's folder**, though both are inside the
   same room and both were invited by the same owner.
 - **Ana and Bo are mutually invisible.** Ownership is read from the node, never
@@ -94,10 +98,22 @@ Four things worth noticing in that table:
    `Teaser` and can open the PDF. Try editing: there is nothing to click.
 2. **Change the id in the URL** to any other node. The same unavailable screen,
    with no hint that the id was real.
-3. **Sign in as Cara.** She lands on a room list containing exactly one entry.
-   Open it: `Financials` and nothing else.
-4. **Sign in as Erik.** A valid session, an empty room list. Authentication
-   proves who you are and grants nothing.
+3. **Sign in as Cara**, then open her folder directly:
+   https://tailored-task.vercel.app/nodes/d681640f-9005-4fb9-864d-0a307a23e266
+
+   Her room list is **empty**, and that is not a bug in the data — `GET /nodes`
+   returns only rooms you *own* (`API-NODES-026`), and Cara owns none. There is
+   no "shared with me" view in this build, so a person invited to a folder
+   reaches it by link and only by link. Worth knowing before you judge the empty
+   screen.
+
+   Now try Dmytro's folder while still signed in as Cara:
+   https://tailored-task.vercel.app/nodes/52da7215-5e2c-4449-849c-3bb5813fda51
+   — "That item is not available", the same screen an invalid id gives.
+4. **Sign in as Erik.** A valid session, an empty room list — but for the
+   opposite reason: Cara's is empty because the listing only shows owned rooms,
+   Erik's because he has no access to anything at all. The two look identical
+   from the outside, which is itself a product gap.
 5. **Sign in as Ana.** The whole room. Upload a PDF — it goes from the browser
    straight to S3 with a presigned URL, and the API never touches the bytes.
    Share a folder, then revoke it and watch the recipient's view die.
@@ -106,6 +122,31 @@ Four things worth noticing in that table:
    not `403` — the surface does not admit it exists.
 
 ---
+
+## A defect this demo exposed
+
+Building this page found a genuine one, so it is written down rather than
+quietly fixed and forgotten.
+
+**`API-SHARING-021` is a `P0` security declaration** — "a share visitor's
+breadcrumbs stop at the shared node and never name an ancestor above it". It
+holds for **public link** visitors and **not** for people invited by email:
+
+| Credential | Requesting `Financials` / `Teaser` | Breadcrumbs returned |
+| --- | --- | --- |
+| Share token (anonymous) | 200 | `["Teaser"]` — correctly truncated |
+| Cara's session (user grant) | 200 | `["Project Meridian", "Financials"]` — **leaks the room** |
+
+The cause is one conditional in
+[`node-access.resolver.ts`](apps/api/src/access/node-access.resolver.ts#L88):
+`grantNodeId` is populated only when the actor carries a `shareId`, so a `user`
+actor gets `null` and the controller builds the trail from the room root.
+
+It survived because the test for that declaration only ever exercises a share
+token. Both kinds of grant live in the same `shares` table and the security
+property is about the *recipient*, not the credential — so this is a gap in the
+fix rather than a decision. The leak is the room's name and id; Cara still gets
+404 on the room itself.
 
 ## Two deliberate behaviours that look like bugs
 
