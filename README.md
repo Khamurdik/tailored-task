@@ -88,7 +88,7 @@ record the README deliverable asks for.
 No test lives inside `apps/api` or `apps/web`. Each module `TODO.md` states its
 test *requirements*; [`tests/`](tests/TODO.md) turns those into **570** addressable,
 traceable declarations, grouped by what the user is trying to do, and is where
-they are implemented. 391 are implemented, including 80 of the 92 `P0`s. A red
+they are implemented. 394 are implemented, including 81 of the 92 `P0`s. A red
 `pnpm test` is still the resting state — the failures are the coverage gate
 emitting one per unimplemented declaration. See [`tests/TODO.md`](tests/TODO.md) §4.
 

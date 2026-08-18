@@ -9,7 +9,7 @@ describe('cursors', () => {
   it('API-COMMON-010 a cursor round-trips to the same (type, name, id) tuple', () => {
     const payload = {
       type: 'folder',
-      name: 'Договоры',
+      name: 'Договори',
       id: '11111111-1111-4111-8111-111111111111',
     };
 
@@ -69,7 +69,7 @@ describe('cursors', () => {
     // which is the gap that let `base64url(payload).base64url(hmac)` ship: the
     // round-trip test passes for any encoding the decoder happens to understand.
     const names = [
-      'Отчёт',
+      'Звіт',
       'a.pdf',
       '',
       // At the cap, in a script where one character is three UTF-8 bytes. This

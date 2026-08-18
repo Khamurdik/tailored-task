@@ -28,14 +28,14 @@ that is in the working tree, unstaged, as the working agreements require.*
 
 ## 2. Where it ended up
 
-**570 declared tests · 391 implemented · 80 of 92 `P0`.** Lint, typecheck and
+**570 declared tests · 394 implemented · 81 of 92 `P0`.** Lint, typecheck and
 build clean in all four packages. 37 Vitest files green, plus 20 Playwright
 journeys in about 50 seconds.
 
 | | Start | End |
 | --- | --- | --- |
-| Declared / implemented | 556 / 156 | **570 / 391** |
-| `P0` | 36 / 83 | **80 / 92** |
+| Declared / implemented | 556 / 156 | **570 / 394** |
+| `P0` | 36 / 83 | **81 / 92** |
 | API modules built | 6 of 12 | **12 of 12** |
 | Web features built | 2 of 7 | **7 of 7** |
 | Migrations | 4 | 5 |
@@ -54,7 +54,7 @@ suites/web/viewer         17/  19    suites/web/explorer       32/  81
 suites/web/uploads        19/  47    suites/web/sharing        18/  30
 suites/web/public-view    14/  28    suites/journeys           16/  39
 suites/api/access         18/  20    suites/api/auth           18/  28
-suites/api/common         12/  18    suites/api/nodes          19/  28
+suites/api/common         12/  18    suites/api/nodes          22/  28
 suites/web/auth           35/  49    suites/api/search          0/   9  (deferred)
 ```
 
@@ -225,14 +225,19 @@ completeness. Each is unticked with a reason in its module `TODO.md`.
   rows** — that needs grant data per row, which today is one `/shares` request
   per row. Doing it properly means the listing carrying an `isShared` flag, which
   is an API change.
-- `public-view`: `Referrer-Policy: no-referrer` on the `/s/:code` **page** is not
-  set. It is a response header, so it belongs to whatever serves the SPA; the API
-  already sets it on `/shares/resolve`.
+- ~~`public-view`: `Referrer-Policy: no-referrer` on the `/s/:code` **page** is
+  not set.~~ **Now set, in `vercel.json`** — it is a response header, so it
+  belongs to whatever serves the SPA, and that is now a file in the repo rather
+  than an unwritten platform setting. Untested until something is actually
+  deployed; the `<meta name="referrer">` in `index.html` is what covers the
+  document in the meantime.
 - `search` and `audit` remain deferred and out of scope, as designed.
 
 **Operational**
 
-- **Nothing is deployed.** `jobs/TODO.md` §5 asks for the API pinned to a single
+- **Nothing is deployed.** The build artifacts now exist and are exercised
+  locally — `apps/api/Dockerfile` and `vercel.json`, see `DEPLOYMENT.md` §5 —
+  but nothing is provisioned. `jobs/TODO.md` §5 asks for the API pinned to a single
   instance (`minSize: 1`/`maxSize: 1`) — that is the thing the startup sweep's
   correctness actually rests on, and it is the one requirement there that lives
   in infrastructure rather than code. Left unticked rather than quietly counted.
@@ -241,13 +246,22 @@ completeness. Each is unticked with a reason in its module `TODO.md`.
 
 **Known defects in the test suite itself**
 
-- **`tests/suites/api/nodes/tree.int.spec.ts` has mis-mapped ids.** Its tests
-  `002`–`008` assert behaviours belonging to different declaration numbers
-  (`002` is declared as a depth property and tests cyclic-move rejection, and so
-  on down). The *properties* are covered — most of them inside test `001`'s
-  `assertTreeIsConsistent` — but the id → behaviour trace the whole registry
-  rests on is wrong there. The gate cannot see it, because it matches ids and not
-  descriptions. A ~7-line fix to the titles.
+- ~~**`tests/suites/api/nodes/tree.int.spec.ts` has mis-mapped ids.**~~
+  **Fixed 2026-08-18.** Its tests `002`–`008` asserted behaviours belonging to
+  other declarations (`002` is declared as a depth property and tested
+  cyclic-move rejection, and so on down). Retitled to the declarations they
+  actually assert — `005`, `006`, `007`, `009`, `011`, `019`, `020` — and the
+  property test now names all four of `001`–`004`, which is what it has always
+  asserted (`assertTreeIsConsistent` checks exactly those four, and `TODO.md`
+  §Notes specifies them as one model). The gate reads every id in a title, so
+  the trace is one-to-one again.
+
+  Worth noting what this moved: `api/nodes` went 19/28 → **22/28** and the `P0`
+  count 80 → **81**, without a line of test logic changing. Three declarations
+  were being credited to tests that did not assert them while the tests that did
+  assert them counted for nothing. That is the failure mode a registry keyed on
+  ids rather than descriptions has, and it stays invisible until someone reads
+  both columns side by side.
 - **The coverage gate reads any `WORD-123` in a test title as an id.** "…a
   SHA-256 of the token…" registered as an implementation of a declaration called
   `SHA-256`. It reports it loudly rather than miscounting, which is the right way
@@ -292,7 +306,7 @@ In rough order of value:
    at the network layer rather than actually killed, or they become the flakiest
    tests in the repo (`journeys/TODO.md` says so, and it is right).
 3. **The ~30 unwritten declarations against finished API modules** —
-   `api/nodes` 19/28, `api/auth` 18/28, `api/common` 12/18, `api/access` 18/20.
+   `api/nodes` 22/28, `api/auth` 18/28, `api/common` 12/18, `api/access` 18/20.
    Cheap, and where most of the 12 remaining `P0`s live.
 4. **The `tree.int.spec.ts` id mapping**, before the suite grows further around
    it.

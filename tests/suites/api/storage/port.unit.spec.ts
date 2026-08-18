@@ -62,10 +62,10 @@ describe('port behaviour', () => {
     const key = objectKey(ROOT, NODE);
     storage.put(key, '%PDF-1.7', 'application/pdf');
 
-    const disposition = dispositionFrom(await storage.presignGet(key, 60, 'Отчёт Q4.pdf'));
+    const disposition = dispositionFrom(await storage.presignGet(key, 60, 'Звіт Q4.pdf'));
 
     expect(disposition).toContain(`filename*=UTF-8''`);
-    expect(disposition).toContain(encodeURIComponent('Отчёт Q4.pdf').replace(/'/g, '%27'));
+    expect(disposition).toContain(encodeURIComponent('Звіт Q4.pdf').replace(/'/g, '%27'));
   });
 
   it('API-STORAGE-011 presignGet sets inline only for application/pdf', async () => {

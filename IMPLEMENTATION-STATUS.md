@@ -21,7 +21,7 @@ specification-only to a booting API and a working login screen.*
 
 ## 1. State in one table
 
-**570 declared tests · 391 implemented · 80 of 92 `P0`.** Lint clean in all four
+**570 declared tests · 394 implemented · 81 of 92 `P0`.** Lint clean in all four
 packages, `pnpm -r typecheck` clean, `pnpm build` succeeds, the API boots and
 serves, the web app builds and signs a user in.
 
@@ -65,7 +65,7 @@ Five migrations applied: `init_users`, `add_nodes`, `add_shares`,
 suites/api/access         18/  20    suites/web/shared         44/  44
 suites/api/auth           18/  28    suites/web/auth           35/  49
 suites/api/common         12/  18    suites/contract           12/  12
-suites/api/nodes          19/  28    suites/api/storage        14/  14
+suites/api/nodes          22/  28    suites/api/storage        14/  14
 suites/api/sharing        20/  20    suites/api/links          22/  23
 suites/api/files          22/  22    suites/api/jobs           24/  24
 suites/api/users          15/  15    suites/api/search          0/   9
@@ -83,9 +83,16 @@ reason:**
   a genuinely useful signal from legitimate clients; the row exists to make the
   trade visible, not to be taken.
 - `api/search` 0/9 — the module is deferred and out of scope.
-- `api/auth` 18/28, `api/common` 12/18, `api/nodes` 19/28, `api/access` 18/20 —
-  ordinary unwritten coverage against finished modules. 22 declarations between
-  them, none `P0`-blocking a shipped feature.
+- `api/auth` 18/28, `api/common` 12/18, `api/nodes` 22/28, `api/access` 18/20 —
+  ordinary unwritten coverage against finished modules. **24** declarations
+  between them, and ~~none `P0`~~ **seven are `P0`**: `API-ACCESS-010`,
+  `API-ACCESS-011`, `API-AUTH-002`, `API-AUTH-018`, `API-COMMON-014`,
+  `API-NODES-010`, `API-NODES-014`. The behaviour each names is exercised
+  somewhere — the byte-identical 404, for instance, is asserted through
+  `API-NODES-022` against a real request — so none of them is an unguarded
+  feature. They are the cheapest `P0` movement available and they are listed here
+  rather than counted, because "none `P0`" was wrong and reads as "nothing left
+  worth doing". `node src/registry/cli.ts --all` prints the current set.
 
 Twelve declarations were added while building. None is padding: seven cover the
 request pipeline, which could not be asserted before a route existed; three cover

@@ -101,7 +101,25 @@ async function assertTreeIsConsistent(): Promise<void> {
 }
 
 describe('the tree', () => {
-  it('API-NODES-001 200 random operations leave every path, depth, and ancestor chain consistent', async () => {
+  /**
+   * All four property declarations, named in one title because they are one
+   * model — which is what `TODO.md` §Notes specifies: 200 operations applied to
+   * the real tree, with the four invariants asserted after every step.
+   *
+   * Four ids rather than four `it` blocks because the run is the expensive part
+   * and each property already fails with its own message
+   * (`assertTreeIsConsistent` labels every expectation), which is the reason the
+   * declarations were split in the first place. The coverage gate reads every id
+   * in a title, so the trace stays one-to-one.
+   *
+   * These titles carried the wrong ids until 2026-08-18: this test was
+   * `API-NODES-001` alone and the seven below it were numbered `002`–`008`,
+   * which are declarations about moves, cascades and stats. Every property was
+   * being asserted and every id resolved to a real declaration, so the gate saw
+   * nothing wrong — it matches ids, not descriptions. What was broken was the
+   * id → behaviour trace the whole registry rests on.
+   */
+  it('API-NODES-001 API-NODES-002 API-NODES-003 API-NODES-004 200 random operations leave every path, depth, cycle and deleted-ancestor invariant consistent', async () => {
     // Not fast-check: the interesting failures here come from *sequences* of
     // operations against real rows, and a shrinker cannot replay a database.
     // A seeded PRNG gives a reproducible sequence and the assertion after every
@@ -184,7 +202,7 @@ describe('the tree', () => {
     expect(deleted, 'deletes').toBeGreaterThan(2);
   }, 120_000);
 
-  it('API-NODES-002 a move into its own descendant is rejected', async () => {
+  it('API-NODES-005 a move into its own descendant is rejected', async () => {
     const room = await nodes.createRoom(ownerId, 'Room');
     const parent = await nodes.createFolder(room.id, 'Parent');
     const child = await nodes.createFolder(parent.id, 'Child');
@@ -201,14 +219,14 @@ describe('the tree', () => {
     await assertTreeIsConsistent();
   });
 
-  it('API-NODES-003 a move to itself is rejected', async () => {
+  it('API-NODES-006 a move to itself is rejected', async () => {
     const room = await nodes.createRoom(ownerId, 'Room');
     const folder = await nodes.createFolder(room.id, 'Folder');
 
     await expect(nodes.move(folder.id, folder.id)).rejects.toMatchObject({ code: 'CYCLIC_MOVE' });
   });
 
-  it('API-NODES-004 the depth cap is rejected with DEPTH_LIMIT, not a Postgres error', async () => {
+  it('API-NODES-007 the depth cap is rejected with DEPTH_LIMIT, not a Postgres error', async () => {
     const room = await nodes.createRoom(ownerId, 'Deep');
     let current = room.id;
 
@@ -226,7 +244,7 @@ describe('the tree', () => {
     expect(String(rejection)).not.toMatch(/index row size|btree|postgres/i);
   });
 
-  it('API-NODES-005 a cascade delete leaves nothing half-done', async () => {
+  it('API-NODES-009 a cascade delete leaves nothing half-done', async () => {
     const room = await nodes.createRoom(ownerId, 'Room');
     const branch = await nodes.createFolder(room.id, 'Branch');
     const inner = await nodes.createFolder(branch.id, 'Inner');
@@ -246,7 +264,7 @@ describe('the tree', () => {
     await assertTreeIsConsistent();
   });
 
-  it('API-NODES-006 ten concurrent creations of one name produce ten distinct names', async () => {
+  it('API-NODES-011 ten concurrent creations of one name produce ten distinct names', async () => {
     const room = await nodes.createRoom(ownerId, 'Busy');
 
     const results = await Promise.all(
@@ -261,7 +279,7 @@ describe('the tree', () => {
     await assertTreeIsConsistent();
   });
 
-  it('API-NODES-007 subtree stats match a naive recursive walk', async () => {
+  it('API-NODES-019 subtree stats match a naive recursive walk', async () => {
     const room = await nodes.createRoom(ownerId, 'Counted');
     const a = await nodes.createFolder(room.id, 'A');
     const b = await nodes.createFolder(a.id, 'B');
@@ -283,7 +301,7 @@ describe('the tree', () => {
     expect(stats.files).toBe(0);
   });
 
-  it('API-NODES-008 rebuildSubtree repairs derived state from parent_id alone', async () => {
+  it('API-NODES-020 rebuildSubtree repairs derived state from parent_id alone', async () => {
     const room = await nodes.createRoom(ownerId, 'Corrupt');
     const parent = await nodes.createFolder(room.id, 'Parent');
     const child = await nodes.createFolder(parent.id, 'Child');

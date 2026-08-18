@@ -279,12 +279,12 @@ describe('the signed URL', () => {
 
   it('WEB-VIEWER-016 the download keeps the display name', async () => {
     install();
-    renderViewer(file({ name: 'Отчёт за квартал.pdf' }));
+    renderViewer(file({ name: 'Звіт за квартал.pdf' }));
 
     const download = await screen.findByRole('link', { name: /Download/ });
     // The name the tree knows, not the storage key — the key is ids only, by
     // design, so without this the file downloads as a uuid.
-    expect(download).toHaveAttribute('download', 'Отчёт за квартал.pdf');
+    expect(download).toHaveAttribute('download', 'Звіт за квартал.pdf');
   });
 });
 

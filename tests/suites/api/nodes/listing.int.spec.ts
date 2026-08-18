@@ -123,7 +123,7 @@ describe('listing children', () => {
     // weaker fixture.
     await makeFile(room.id, 'aaa.pdf');
     await nodes.createFolder(room.id, 'Ømsorg');
-    await makeFile(room.id, 'Отчёт.pdf');
+    await makeFile(room.id, 'Звіт.pdf');
     await nodes.createFolder(room.id, 'café');
     await makeFile(room.id, 'bbb.pdf');
     await nodes.createFolder(room.id, 'Bilan');
@@ -149,12 +149,12 @@ describe('listing children', () => {
   });
 
   it('API-NODES-016 paging 500 Cyrillic and accented children loses and duplicates nothing', async () => {
-    const room = await nodes.createRoom(ownerId, 'Большая комната');
+    const room = await nodes.createRoom(ownerId, 'Велика кімната');
 
     // Non-ASCII throughout, and deliberately including names that differ only
     // in an accent or in case — the pairs a collation gets wrong at exactly the
     // page boundary where a cursor comparison disagrees with the ORDER BY.
-    const alphabet = ['Отчёт', 'Отчет', 'café', 'cafe', 'Café', 'Ärende', 'Arende', '契約', 'Đầu', 'straße'];
+    const alphabet = ['Ґанок', 'Ганок', 'café', 'cafe', 'Café', 'Ärende', 'Arende', '契約', 'Đầu', 'straße'];
     const created: string[] = [];
     for (let index = 0; index < 500; index += 1) {
       const name = `${alphabet[index % alphabet.length] ?? 'x'} ${index}`;

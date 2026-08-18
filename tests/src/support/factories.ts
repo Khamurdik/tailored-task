@@ -12,7 +12,7 @@ import type { PrismaService } from '@api/common';
  * non-ASCII means they surface in whatever test happens to run.
  */
 const NAMES = [
-  'Отчёт',
+  'Звіт',
   'café',
   'Ärendehandlingar',
   '契約書',

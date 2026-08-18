@@ -4,7 +4,7 @@
   "private": true,
   "description": "Data room API \u2014 NestJS 11 + Prisma 6 + PostgreSQL",
   "engines": {
-    "node": ">=26.0.0"
+    "node": ">=24.15.0"
   },
   "scripts": {
     "dev": "nest start --watch --env-file .env",

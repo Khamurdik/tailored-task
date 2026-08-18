@@ -139,7 +139,7 @@ describe('a real bucket', () => {
 
     // A non-ASCII name, because the RFC 6266 double form is the part that gets
     // dropped and the part that matters outside English.
-    const signed = await storage.presignGet(key, 60, 'Отчёт за квартал.pdf');
+    const signed = await storage.presignGet(key, 60, 'Звіт за квартал.pdf');
     const response = await fetch(signed);
 
     const disposition = response.headers.get('content-disposition') ?? '';
@@ -147,7 +147,7 @@ describe('a real bucket', () => {
     expect(disposition).toContain("filename*=UTF-8''");
     // The storage key is ids only by design, so without this the file downloads
     // as a uuid.
-    expect(decodeURIComponent(disposition)).toContain('Отчёт за квартал.pdf');
+    expect(decodeURIComponent(disposition)).toContain('Звіт за квартал.pdf');
 
     // And the rule that does not participate in the upload policy: the same
     // helper says `attachment` for anything that is not a PDF, so a stored
