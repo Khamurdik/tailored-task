@@ -22,7 +22,8 @@ that is in the working tree, unstaged, as the working agreements require.*
    phase, **38 numbered blockers with what unblocked them**
 3. [`HANDOFF.md`](HANDOFF.md) — the design decisions this build is standing on
 4. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the only whole-system document
-5. [`DEPLOYMENT.md`](DEPLOYMENT.md) — how to run it; §8 is what is still not true
+5. [`DEPLOYMENT.md`](DEPLOYMENT.md) — how to run it locally; §8 is what is still not true
+6. [`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) — AWS and Vercel; §9 is what is not provisioned
 
 ---
 
@@ -236,7 +237,7 @@ completeness. Each is unticked with a reason in its module `TODO.md`.
 **Operational**
 
 - **Nothing is deployed.** The build artifacts now exist and are exercised
-  locally — `apps/api/Dockerfile` and `vercel.json`, see `DEPLOYMENT.md` §5 —
+  locally — `apps/api/Dockerfile` and `vercel.json`, see `DEPLOYMENT-CLOUD.md` —
   but nothing is provisioned. `jobs/TODO.md` §5 asks for the API pinned to a single
   instance (`minSize: 1`/`maxSize: 1`) — that is the thing the startup sweep's
   correctness actually rests on, and it is the one requirement there that lives

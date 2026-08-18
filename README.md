@@ -19,7 +19,8 @@ decisions taken while building it, and an honest list of what is still missing.
 Then [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md) for where the code
 is and [`IMPLEMENTATION-LOG.md`](IMPLEMENTATION-LOG.md) for the blockers hit on
 the way. [`HANDOFF.md`](HANDOFF.md) carries the original design decisions and the
-version research; [`DEPLOYMENT.md`](DEPLOYMENT.md) is how to run it.
+version research; [`DEPLOYMENT.md`](DEPLOYMENT.md) is how to run it locally and
+[`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) is how it is hosted on AWS and Vercel.
 
 ## How to use these files
 

@@ -50,7 +50,7 @@ that matter most were checked by running them, because both were designed agains
 Node 26's type-stripping rules and neither is exercised by a compiler:
 `prisma/seed.ts` (the strip-safe zone) and `tests/src/registry/cli.ts`. The API
 image also builds and serves on a `node:24-slim` base (588 MB against 593 MB),
-though `apps/api/Dockerfile` stays on 26 — see DEPLOYMENT.md §5.
+though `apps/api/Dockerfile` stays on 26 — see DEPLOYMENT-CLOUD.md §2.
 
 ### Corepack is gone from Node 25+
 

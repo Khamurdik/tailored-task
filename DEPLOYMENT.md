@@ -1,7 +1,12 @@
-# Deployment
+# Deployment — locally
 
-How to run this system locally and how to put it somewhere. Kept current as
-modules land — if a step here is wrong, that is a bug in this file.
+How to run this system on a laptop. Kept current as modules land — if a step
+here is wrong, that is a bug in this file.
+
+**For AWS and Vercel, see [`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md)**, which
+owns the hosted deployment end to end: what is provisioned, the identities and
+their policies, the decisions taken while building it, the runbook and teardown.
+The two were one document until 2026-08-18 and had grown two audiences.
 
 For *what is built* rather than *how to run it*, see
 [`IMPLEMENTATION-STATUS.md`](IMPLEMENTATION-STATUS.md).
@@ -16,9 +21,8 @@ placeholder data layer with no backend at all.
 Twenty Playwright journeys cover the real browser + API + Postgres + bucket, and
 `JOURNEY-001` is the whole product in one pass.
 
-Every command in §3 and §4 below has been run; the hosted sections in §5 are the
-target and are marked as such. §8 tracks what is not yet true. `pnpm typecheck`
-and `pnpm lint` are green across all four packages.
+Every command in §3 and §4 below has been run. §8 tracks what is not yet true.
+`pnpm typecheck` and `pnpm lint` are green across all four packages.
 
 ---
 
@@ -28,7 +32,7 @@ and `pnpm lint` are green across all four packages.
 | --- | --- | --- |
 | Node | **26.7.0** for development; **`>=24.15.0`** is the `engines` floor | `.nvmrc` pins 26.7.0. Node 26 is Current, not LTS until 2026-10-28, so 24 LTS is supported and verified — see §6 |
 | pnpm | **11.22.0** | `packageManager` field; pnpm 10+ self-switches |
-| Postgres | **18** | local via `docker-compose`, hosted via Neon |
+| Postgres | **18** | local via `docker-compose`; hosted is RDS 18.4 — see DEPLOYMENT-CLOUD.md |
 | Docker | any recent | only for the local database and the integration tests |
 
 **Corepack does not work on 26.** It was unbundled from Node 25+, so
@@ -92,7 +96,7 @@ a boot log is the least private place in a deployment.
 
 | Variable | Why it needs thought |
 | --- | --- |
-| `DATABASE_URL` | Hosted Postgres needs `sslmode=require`. Neon's **pooled** endpoint is PgBouncer in transaction mode — see §6 |
+| `DATABASE_URL` | Hosted Postgres needs `sslmode=require` — the deployed RDS instance refuses anything else. See DEPLOYMENT-CLOUD.md §4.2 |
 | `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | Two different values. `openssl rand -base64 32` twice |
 | `SEED_USERS` | A JSON array. This is the **only** way an account is created — see §4 |
 | `GOOGLE_CLIENT_ID` | Optional. Leave blank and the button is not rendered; password login still works |
@@ -299,217 +303,24 @@ passwords.
 
 ---
 
-## 5. Hosted deployment — the target
+## 5. Hosted deployment
 
-~~**Nothing is provisioned.**~~ **Provisioned 2026-08-18** into AWS account
-`920766868429`, region **us-east-2** — not `us-east-1` as the examples below
-say, because that is the region the deploying profile was configured for and it
-keeps this clear of unrelated Elastic Beanstalk leftovers in `us-east-1`.
+**Moved.** Everything about AWS and Vercel now lives in
+[`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) — what is provisioned, the three
+identities, the decisions taken while building it, the runbook, and teardown.
 
-| Resource | Identifier |
-| --- | --- |
-| Bucket | `dataroom-prod-920766868429` — public access blocked, CORS + lifecycle applied |
-| Image | `920766868429.dkr.ecr.us-east-2.amazonaws.com/dataroom-api:latest` |
-| Instance role | `dataroom-api-instance` — S3 policy scoped to that bucket, no access keys |
-| ECR access role | `dataroom-api-ecr-access` |
-| Autoscaling | `dataroom-single` — min 1, max 1, per §6 |
-| Database | `dataroom-db` — RDS Postgres 18.4, `db.t4g.micro` |
+It was split out on 2026-08-18: this file is how to run the system on a laptop,
+and that one is how it is hosted. They had grown into one document with two
+audiences, and the hosted half is the half that changes every time something is
+provisioned.
 
-### The database is RDS, not Neon — and it is publicly reachable
-
-**Decided by the user, 2026-08-18, with the trade-off stated before the choice.**
-The plan above specifies Neon. RDS was chosen to keep everything inside AWS.
-
-The cost of that is specific and worth naming rather than burying: App Runner has
-no static egress addresses without a VPC connector, so an RDS instance it can
-reach over the public internet must accept connections from `0.0.0.0/0`. The
-security group opens **5432 only**, and three mitigations are applied — but they
-narrow the exposure, they do not remove it:
-
-- **`rds.force_ssl=1`** in the `dataroom-pg18` parameter group, so a plaintext
-  connection is *refused* rather than merely discouraged;
-- a **32-character generated master password**, and a master username that is not
-  `postgres`;
-- storage encrypted at rest.
-
-The shape that does not have this problem is RDS in a private subnet behind an
-App Runner VPC connector — which then needs a NAT gateway or an S3 VPC endpoint,
-because routing egress through the VPC otherwise cuts the API off from the
-bucket. That is the upgrade path if this ever holds real diligence documents.
-
-| Piece | Target | Why |
-| --- | --- | --- |
-| Web | Vercel | Static build, no server needed |
-| API | AWS App Runner | Container, one instance — see §6 |
-| Database | Neon | Postgres 18, scales to zero |
-| Blobs | S3 | Presigned direct-to-browser, bucket never public |
-
-### The API image
-
-Built from the repository root, because `@dataroom/api` depends on
-`@dataroom/shared` through `workspace:*` and a context rooted at `apps/api/`
-cannot see it:
-
-```bash
-docker build -f apps/api/Dockerfile -t dataroom-api .
-```
-
-Four stages: install against the manifests alone so the layer caches, build
-`shared` then the API, `pnpm deploy --prod` into a standalone tree, and a runner
-holding that tree and nothing else. 593 MB, `node:26-slim` (which is Node 26.7.0
-exactly, matching `.nvmrc`, and already carries the `libssl.so.3` that Prisma's
-query engine needs — so there is no apt layer).
-
-Three things in it are less obvious than they look:
-
-- **`pnpm deploy` needs `--legacy`.** Since pnpm 10 it refuses to run unless the
-  workspace sets `inject-workspace-packages=true`. Setting that would change how
-  every local install links `@dataroom/shared`, which is a workspace-wide change
-  to serve one container build.
-- **The Prisma client is generated into the deployed tree**, from the deployed
-  tree, by the CLI left behind in the build stage — `prisma` is a
-  devDependency and so is absent from a `--prod` tree by definition. Generating
-  it in `/app` instead would put it in a `node_modules` the final image never
-  receives, and the failure would appear at the first query rather than at build.
-- **The image runs `node dist/main`, not `pnpm start`** — see the `start:prod`
-  note in §3.
-
-It **does not** run migrations or the seed. Both stay the deliberate, separate
-steps §4 describes: `migrate deploy` is not idempotent in the sense operators
-assume, and `db:seed` is the only thing in the system that creates a user.
-
-Verified by running, not by reading: the container boots with **no `.env` file
-and platform environment only**, connects to Postgres, signs a user in (which
-exercises the `@node-rs/argon2` native binding), completes a full upload through
-the presigned PUT to a real bucket, and reports `healthy` on its `HEALTHCHECK`.
-
-Set the App Runner service port to **3000** (the image's `PORT`), and remember
-`minSize: 1` / `maxSize: 1` — §6 explains why that is a correctness requirement
-rather than a cost one.
-
-### The web app
-
-`vercel.json` at the repository root carries the build, the `/api` rewrite and
-the security headers. **Two placeholders must be replaced before the first
-deploy** — `REPLACE-WITH-APP-RUNNER-HOST` (the rewrite destination) and
-`REPLACE-WITH-BUCKET-HOST` (the bucket origin, which appears in `connect-src`
-for the upload PUT and in `frame-src` for the PDF preview). Vercel does not
-interpolate environment variables into `vercel.json`, so these are literals and
-there is no way to defer them to a project setting.
-
-Set the Vercel project's root directory to the **repository root**, not
-`apps/web` — the build has to reach `packages/shared`.
-
-**Only one Vercel project.** The API is a container and does not belong here:
-its scheduler is only correct on a single long-lived instance (`jobs/TODO.md`
-§5), and Vercel Functions are ephemeral and horizontally scaled. Importing the
-repo a second time with a Root Directory of `apps/api` does not produce an API —
-it re-runs the root `vercel.json`, which builds the **web** app, and publishes a
-second copy of the front end on a second origin. That happened on 2026-08-18.
-
-`buildCommand` therefore starts with `node scripts/check-vercel-config.mjs`,
-which refuses the build in two situations:
-
-- **a placeholder is still in `vercel.json`.** `REPLACE-WITH-APP-RUNNER-HOST`
-  fails loudly at runtime (every `/api` call 502s), but `REPLACE-WITH-BUCKET-HOST`
-  fails *quietly*: the page renders and the tree loads, and only the upload PUT
-  and the PDF frame are blocked, by a CSP error in a console nobody is watching.
-  Note that the bucket host appears **twice** on the CSP line — `connect-src` and
-  `frame-src` — so a find-and-replace that stops at the first match leaves one
-  behind. The check counts them.
-- **the Root Directory is not the repository root.** Vercel resolves
-  `buildCommand` against it, so the script is simply not found and the build
-  stops on its first line instead of succeeding into the wrong shape.
-
-Set `ALLOW_PLACEHOLDER_DEPLOY=1` as a project environment variable to downgrade
-the first case to a warning — a UI-only preview where nothing that needs the API
-works. The second case has no escape hatch, because there is no version of it
-that is correct.
-
-The rewrite keeps the API same-origin in production, matching the dev proxy, so
-`VITE_API_URL` should be left **unset** on Vercel. Setting it to the App Runner
-host instead is a supported alternative, but then the browser talks
-cross-origin: add that origin to `connect-src`, and add the Vercel origin to the
-API's `CORS_ORIGINS`.
-
-**The CSP is verified, not guessed.** The twenty journeys were run against the
-production build served with exactly these headers and through the `/api`
-rewrite, and all twenty pass — including `JOURNEY-001`'s upload (an XHR PUT to
-the bucket origin) and `JOURNEY-005`'s preview (an `<iframe>` of a presigned URL
-on that same origin), which are precisely what a wrong `connect-src` or
-`frame-src` breaks. `script-src` carries no `'unsafe-inline'` and no
-`'unsafe-eval'`; the built `index.html` contains no inline script, so nothing
-needs them. **`style-src` does keep `'unsafe-inline'`** — Radix and React set
-inline `style` attributes — and that is a real, stated weakening of §6's "ship
-the CSP with no `unsafe-inline`", which is about scripts.
-
-The Google directives (`accounts.google.com/gsi/*`) can be deleted outright if
-Google sign-in stays disabled; nothing else references them.
-
-~~One constraint to check before the first deploy: `engines.node` is
-`>=26.0.0`, and Vercel may not offer Node 26 yet.~~ **Resolved 2026-08-18** — the
-floor is `>=24.15.0`, so Vercel building on Node 24 LTS is allowed and the web
-build is static output either way. Nothing else needs to change for that.
-
-### S3 bucket prerequisites
-
-- **Block Public Access ON.** Every read is a presigned GET; nothing is public.
-- CORS allowing `PUT, GET, HEAD` from the web origin and `http://localhost:5173`,
-  exposing `ETag`.
-- IAM scoped to `s3:PutObject, GetObject, DeleteObject` on `arn:…:bucket/*`
-  only, attached to the **App Runner instance role** —
-  [`infra/aws/s3-access-policy.json`](infra/aws/s3-access-policy.json).
-
-  **The API needs no access keys.** Leave `AWS_ACCESS_KEY_ID` and
-  `AWS_SECRET_ACCESS_KEY` unset in the service and the SDK falls back to the
-  instance role, which `s3-storage.adapter.ts` was written for from the start —
-  explicit keys exist there for local MinIO, and are the exception rather than
-  the default. That removes the only long-lived AWS secret the deployment would
-  otherwise carry, and with it the question of how to rotate it.
-
-  Three identities, each with one job:
-
-  | Identity | Kind | For |
-  | --- | --- | --- |
-  | `dataroom-api-instance` | role, trusted by `tasks.apprunner.amazonaws.com` | the running API's S3 access |
-  | `dataroom-api-ecr-access` | role, trusted by `build.apprunner.amazonaws.com` | letting App Runner pull the image |
-  | `dataroom-deploy` | user, with an access key | what *you* authenticate as to create the above |
-
-  Trust policies for the two roles are
-  [`apprunner-instance-role-trust.json`](infra/aws/apprunner-instance-role-trust.json)
-  and
-  [`apprunner-ecr-access-role-trust.json`](infra/aws/apprunner-ecr-access-role-trust.json);
-  the deployer's own policy is
-  [`iam-deployer-policy.json`](infra/aws/iam-deployer-policy.json), scoped to
-  `dataroom-*` names throughout. Note its one honest weak point: creating roles
-  means it can also write those roles' policies, so it can escalate *within the
-  `dataroom-*` namespace*. Constraining that properly needs a permissions
-  boundary, which is more machinery than a single-service deployment warrants —
-  but it is a real limit and it is better written down than discovered.
-
-  ~~`s3:HeadObject`~~ was listed here until 2026-08-18 and **is not an IAM
-  action.** S3 authorizes a `HEAD` with `s3:GetObject`. The policy worked anyway
-  because `GetObject` was on the list beside it — but anyone trimming the list to
-  "just what `/complete` needs" would have kept the inert entry and dropped the
-  one doing the work, and the failure would be a 403 from `HeadObject` at
-  `/complete`, after the bytes were already uploaded.
-- Lifecycle rule aborting incomplete multipart uploads after 1 day. This is the
-  owner of one of the four upload failure states — an object whose `/complete`
-  was never called.
-
-### Health checks
-
-`/health` returns `{"status":"ok"}` and **must never touch the database.** App
-Runner polls it about every 10 seconds; a query there keeps Neon from scaling to
-zero and burns the free-tier compute quota in roughly two weeks. The database
-check lives on `/health/deep`, which nothing polls.
-
-### CORS and credentials
-
-The API sets no cookies and the client sends none. CORS is therefore
-uncredentialed, `CORS_ORIGINS` is an exact-match list, and the
-`SameSite=None` problem a Vercel-plus-App-Runner split would normally create
-does not arise.
+The short version: the web app is on **Vercel** (static build, one project, root
+directory is the repository root), the API is a container on **AWS App Runner**
+pinned to a single instance, Postgres is **RDS**, and blobs are in **S3** with
+public access blocked. The constraints that bite — one instance, the unrevocable
+presigned GET, the health check that must not touch the database — are in
+[`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) §6 and repeated in §6 below where
+they are also true locally.
 
 ---
 
@@ -609,18 +420,12 @@ Tracked here rather than discovered at deploy time.
 - ~~`pnpm typecheck` is red in `apps/web`.~~ **Resolved.** All four packages
   typecheck clean as of the first web source file. `TS18003: No inputs were
 found` is gone, so any typecheck failure from here on is a real one.
-- **Nothing has been provisioned.** The build artifacts exist and both are
-  exercised locally — the API image boots, connects and uploads; the CSP in
-  `vercel.json` was proven by running all twenty journeys against the production
-  build behind it (§5). What has *not* happened is any account, bucket, Neon
-  database or service. Until it does, §5 is a runbook rather than a record.
-  ~~No S3 bucket has been created~~ — `docker-compose.test.yml` runs **MinIO**,
-  and `S3_ENDPOINT` points the adapter at it, so the upload path runs locally
-  and `API-STORAGE-008..010` finally execute. What is still untested is AWS S3
-  *specifically*: MinIO implements the same API and is not the same service.
-  One difference is already visible — the presigned PUT carries an
-  `x-amz-checksum-crc32` query parameter that MinIO ignores and S3 may not.
-- **`vercel.json` still holds two placeholder origins.** `REPLACE-WITH-APP-RUNNER-HOST`
-  and `REPLACE-WITH-BUCKET-HOST` — the first deploy fails at the rewrite, and
-  the second failure (a CSP that blocks uploads and the PDF preview) is quieter.
-  See §5.
+- **The S3 adapter has never talked to real S3.** `docker-compose.test.yml` runs
+  **MinIO**, and `S3_ENDPOINT` points the adapter at it, so the upload path runs
+  locally and `API-STORAGE-008..010` finally execute — but MinIO implements the
+  same API and is not the same service. One difference is already visible: the
+  presigned PUT carries an `x-amz-checksum-crc32` query parameter that MinIO
+  ignores and S3 may not.
+- **What is and is not provisioned** is tracked in
+  [`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) §9, not here, so that the hosted
+  state has one home and cannot disagree with itself in two files.

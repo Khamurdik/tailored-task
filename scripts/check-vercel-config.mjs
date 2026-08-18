@@ -42,7 +42,7 @@ const lines = [
   '                                e.g. dataroom-prod.s3.eu-central-1.amazonaws.com',
   '',
   'Vercel cannot read these from environment variables — vercel.json takes',
-  'literals only, so they have to be in the committed file. See DEPLOYMENT.md §5.',
+  'literals only, so they have to be in the committed file. See DEPLOYMENT-CLOUD.md §5.',
   '',
 ];
 

@@ -12,7 +12,8 @@ specification-only to a booting API and a working login screen.*
 | **this file** | Where the code is, what broke, what to do next |
 | [`IMPLEMENTATION-LOG.md`](IMPLEMENTATION-LOG.md) | *What happened*, in order, and what blocked it |
 | [`HANDOFF.md`](HANDOFF.md) §3 | The decision log — *why* things are the way they are |
-| [`DEPLOYMENT.md`](DEPLOYMENT.md) | How to run it; §8 is what does not work yet |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | How to run it locally; §8 is what does not work yet |
+| [`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) | AWS and Vercel — what is provisioned, the runbook, teardown |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The only whole-system document |
 | [`tests/TODO.md`](tests/TODO.md) | How the test registry and coverage gate work |
 | `*/TODO.md` | Per-module contract, with ticked boxes for what exists |

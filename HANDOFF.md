@@ -38,7 +38,7 @@ Read in this order:
 2. [`README.md`](README.md) — module index and build order
 3. [`PROJECT-ANALYSIS.md`](PROJECT-ANALYSIS.md) — independent critique, including
    the contradictions still open
-4. [`DEPLOYMENT.md`](DEPLOYMENT.md) — how to run it, the hosted target, and the
+4. [`DEPLOYMENT.md`](DEPLOYMENT.md) — how to run it locally, and the
    constraints that bite. §8 lists what is not true yet
 5. [`docs/TOOLCHAIN.md`](docs/TOOLCHAIN.md) — every version pin and why
 6. [`tests/TODO.md`](tests/TODO.md) — how testing works here

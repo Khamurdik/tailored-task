@@ -118,7 +118,7 @@ EXPOSE 3000
 
 # Local convenience only — App Runner polls /health itself over HTTP, and this
 # HEALTHCHECK is not what it reads. /health deliberately touches no database:
-# a query here keeps Neon from scaling to zero. See DEPLOYMENT.md §5.
+# a query here is polled every ~10s forever. See DEPLOYMENT-CLOUD.md §6.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 

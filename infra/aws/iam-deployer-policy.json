@@ -81,8 +81,7 @@
         "iam:GetRolePolicy",
         "iam:AttachRolePolicy",
         "iam:ListAttachedRolePolicies",
-        "iam:ListRolePolicies",
-        "iam:CreateServiceLinkedRole"
+        "iam:ListRolePolicies"
       ],
       "Resource": "arn:aws:iam::*:role/dataroom-*"
     },
@@ -91,6 +90,12 @@
       "Effect": "Allow",
       "Action": ["iam:PassRole"],
       "Resource": "arn:aws:iam::*:role/dataroom-*"
+    },
+    {
+      "Sid": "AppRunnersOwnServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": ["iam:CreateServiceLinkedRole"],
+      "Resource": "arn:aws:iam::*:role/aws-service-role/apprunner.amazonaws.com/AWSServiceRoleForAppRunner*"
     }
   ]
 }
