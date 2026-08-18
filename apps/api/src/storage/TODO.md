@@ -68,7 +68,8 @@ implementation in tests without touching a single caller.
 ## Console prerequisites
 Bucket with Block Public Access **on**; CORS allowing `PUT, GET, HEAD` from the
 web origin and `http://localhost:5173`, exposing `ETag`; IAM policy scoped to
-`s3:PutObject, GetObject, DeleteObject, HeadObject` on `arn:…:bucket/*` only;
+`s3:PutObject, GetObject, DeleteObject` on `arn:…:bucket/*` only (there is no
+`s3:HeadObject` action — S3 authorizes `HeadObject` with `s3:GetObject`);
 lifecycle rule aborting incomplete multipart uploads after 1 day.
 
 ## Tests

@@ -301,10 +301,41 @@ passwords.
 
 ## 5. Hosted deployment — the target
 
-**Nothing is provisioned.** The build artifacts now exist and are exercised
-locally — `apps/api/Dockerfile` and `vercel.json`, both covered below — but no
-account, bucket, database or service has been created, so this section is a
-runbook for a deployment that has not happened rather than a record of one.
+~~**Nothing is provisioned.**~~ **Provisioned 2026-08-18** into AWS account
+`920766868429`, region **us-east-2** — not `us-east-1` as the examples below
+say, because that is the region the deploying profile was configured for and it
+keeps this clear of unrelated Elastic Beanstalk leftovers in `us-east-1`.
+
+| Resource | Identifier |
+| --- | --- |
+| Bucket | `dataroom-prod-920766868429` — public access blocked, CORS + lifecycle applied |
+| Image | `920766868429.dkr.ecr.us-east-2.amazonaws.com/dataroom-api:latest` |
+| Instance role | `dataroom-api-instance` — S3 policy scoped to that bucket, no access keys |
+| ECR access role | `dataroom-api-ecr-access` |
+| Autoscaling | `dataroom-single` — min 1, max 1, per §6 |
+| Database | `dataroom-db` — RDS Postgres 18.4, `db.t4g.micro` |
+
+### The database is RDS, not Neon — and it is publicly reachable
+
+**Decided by the user, 2026-08-18, with the trade-off stated before the choice.**
+The plan above specifies Neon. RDS was chosen to keep everything inside AWS.
+
+The cost of that is specific and worth naming rather than burying: App Runner has
+no static egress addresses without a VPC connector, so an RDS instance it can
+reach over the public internet must accept connections from `0.0.0.0/0`. The
+security group opens **5432 only**, and three mitigations are applied — but they
+narrow the exposure, they do not remove it:
+
+- **`rds.force_ssl=1`** in the `dataroom-pg18` parameter group, so a plaintext
+  connection is *refused* rather than merely discouraged;
+- a **32-character generated master password**, and a master username that is not
+  `postgres`;
+- storage encrypted at rest.
+
+The shape that does not have this problem is RDS in a private subnet behind an
+App Runner VPC connector — which then needs a NAT gateway or an S3 VPC endpoint,
+because routing egress through the VPC otherwise cuts the API off from the
+bucket. That is the upgrade path if this ever holds real diligence documents.
 
 | Piece | Target | Why |
 | --- | --- | --- |
@@ -369,6 +400,32 @@ there is no way to defer them to a project setting.
 Set the Vercel project's root directory to the **repository root**, not
 `apps/web` — the build has to reach `packages/shared`.
 
+**Only one Vercel project.** The API is a container and does not belong here:
+its scheduler is only correct on a single long-lived instance (`jobs/TODO.md`
+§5), and Vercel Functions are ephemeral and horizontally scaled. Importing the
+repo a second time with a Root Directory of `apps/api` does not produce an API —
+it re-runs the root `vercel.json`, which builds the **web** app, and publishes a
+second copy of the front end on a second origin. That happened on 2026-08-18.
+
+`buildCommand` therefore starts with `node scripts/check-vercel-config.mjs`,
+which refuses the build in two situations:
+
+- **a placeholder is still in `vercel.json`.** `REPLACE-WITH-APP-RUNNER-HOST`
+  fails loudly at runtime (every `/api` call 502s), but `REPLACE-WITH-BUCKET-HOST`
+  fails *quietly*: the page renders and the tree loads, and only the upload PUT
+  and the PDF frame are blocked, by a CSP error in a console nobody is watching.
+  Note that the bucket host appears **twice** on the CSP line — `connect-src` and
+  `frame-src` — so a find-and-replace that stops at the first match leaves one
+  behind. The check counts them.
+- **the Root Directory is not the repository root.** Vercel resolves
+  `buildCommand` against it, so the script is simply not found and the build
+  stops on its first line instead of succeeding into the wrong shape.
+
+Set `ALLOW_PLACEHOLDER_DEPLOY=1` as a project environment variable to downgrade
+the first case to a warning — a UI-only preview where nothing that needs the API
+works. The second case has no escape hatch, because there is no version of it
+that is correct.
+
 The rewrite keeps the API same-origin in production, matching the dev proxy, so
 `VITE_API_URL` should be left **unset** on Vercel. Setting it to the App Runner
 host instead is a supported alternative, but then the browser talks
@@ -399,8 +456,43 @@ build is static output either way. Nothing else needs to change for that.
 - **Block Public Access ON.** Every read is a presigned GET; nothing is public.
 - CORS allowing `PUT, GET, HEAD` from the web origin and `http://localhost:5173`,
   exposing `ETag`.
-- IAM scoped to `s3:PutObject, GetObject, DeleteObject, HeadObject` on
-  `arn:…:bucket/*` only.
+- IAM scoped to `s3:PutObject, GetObject, DeleteObject` on `arn:…:bucket/*`
+  only, attached to the **App Runner instance role** —
+  [`infra/aws/s3-access-policy.json`](infra/aws/s3-access-policy.json).
+
+  **The API needs no access keys.** Leave `AWS_ACCESS_KEY_ID` and
+  `AWS_SECRET_ACCESS_KEY` unset in the service and the SDK falls back to the
+  instance role, which `s3-storage.adapter.ts` was written for from the start —
+  explicit keys exist there for local MinIO, and are the exception rather than
+  the default. That removes the only long-lived AWS secret the deployment would
+  otherwise carry, and with it the question of how to rotate it.
+
+  Three identities, each with one job:
+
+  | Identity | Kind | For |
+  | --- | --- | --- |
+  | `dataroom-api-instance` | role, trusted by `tasks.apprunner.amazonaws.com` | the running API's S3 access |
+  | `dataroom-api-ecr-access` | role, trusted by `build.apprunner.amazonaws.com` | letting App Runner pull the image |
+  | `dataroom-deploy` | user, with an access key | what *you* authenticate as to create the above |
+
+  Trust policies for the two roles are
+  [`apprunner-instance-role-trust.json`](infra/aws/apprunner-instance-role-trust.json)
+  and
+  [`apprunner-ecr-access-role-trust.json`](infra/aws/apprunner-ecr-access-role-trust.json);
+  the deployer's own policy is
+  [`iam-deployer-policy.json`](infra/aws/iam-deployer-policy.json), scoped to
+  `dataroom-*` names throughout. Note its one honest weak point: creating roles
+  means it can also write those roles' policies, so it can escalate *within the
+  `dataroom-*` namespace*. Constraining that properly needs a permissions
+  boundary, which is more machinery than a single-service deployment warrants —
+  but it is a real limit and it is better written down than discovered.
+
+  ~~`s3:HeadObject`~~ was listed here until 2026-08-18 and **is not an IAM
+  action.** S3 authorizes a `HEAD` with `s3:GetObject`. The policy worked anyway
+  because `GetObject` was on the list beside it — but anyone trimming the list to
+  "just what `/complete` needs" would have kept the inert entry and dropped the
+  one doing the work, and the failure would be a 403 from `HeadObject` at
+  `/complete`, after the bytes were already uploaded.
 - Lifecycle rule aborting incomplete multipart uploads after 1 day. This is the
   owner of one of the four upload failure states — an object whose `/complete`
   was never called.

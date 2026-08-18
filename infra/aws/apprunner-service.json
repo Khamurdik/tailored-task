@@ -1,0 +1,42 @@
+{
+  "ServiceName": "dataroom-api",
+  "SourceConfiguration": {
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "REPLACE-WITH-ECR-ACCESS-ROLE-ARN"
+    },
+    "AutoDeploymentsEnabled": false,
+    "ImageRepository": {
+      "ImageIdentifier": "REPLACE-WITH-ACCOUNT-ID.dkr.ecr.us-east-1.amazonaws.com/dataroom-api:latest",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "3000",
+        "RuntimeEnvironmentVariables": {
+          "NODE_ENV": "production",
+          "PORT": "3000",
+          "DATABASE_URL": "REPLACE-WITH-NEON-POOLED-URL",
+          "JWT_ACCESS_SECRET": "REPLACE-WITH-openssl-rand-base64-32",
+          "JWT_REFRESH_SECRET": "REPLACE-WITH-A-DIFFERENT-openssl-rand-base64-32",
+          "AWS_REGION": "us-east-1",
+          "S3_BUCKET": "REPLACE-WITH-BUCKET-NAME",
+          "UPLOAD_FILE_POLICY": "pdf-only",
+          "JOBS_SCHEDULER_ENABLED": "true",
+          "CORS_ORIGINS": "https://REPLACE-WITH-VERCEL-DOMAIN"
+        }
+      }
+    }
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1024",
+    "Memory": "2048",
+    "InstanceRoleArn": "REPLACE-WITH-INSTANCE-ROLE-ARN"
+  },
+  "HealthCheckConfiguration": {
+    "Protocol": "HTTP",
+    "Path": "/health",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
+  },
+  "AutoScalingConfigurationArn": "REPLACE-WITH-MIN1-MAX1-AUTOSCALING-ARN"
+}
