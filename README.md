@@ -9,6 +9,10 @@ and are kept current with it: ticked boxes are what exists, and each carries an
 remains is depth rather than shape — see
 [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) §7.
 
+**Reviewing this rather than building on it?** Start with
+[`REVIEW.md`](REVIEW.md) — a live deployment, six accounts, and a dataset built
+so the permission model can be checked by clicking.
+
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first — it is the only
 document that describes the system as a whole. Everything else is scoped to a
 single module on purpose.

@@ -1,7 +1,11 @@
 {
   "CORSRules": [
     {
-      "AllowedOrigins": ["https://REPLACE-WITH-VERCEL-DOMAIN", "http://localhost:5173"],
+      "AllowedOrigins": [
+        "https://tailored-task.vercel.app",
+        "https://tailored-task-*.vercel.app",
+        "http://localhost:5173"
+      ],
       "AllowedMethods": ["PUT", "GET", "HEAD"],
       "AllowedHeaders": ["*"],
       "ExposeHeaders": ["ETag"],

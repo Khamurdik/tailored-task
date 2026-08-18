@@ -374,7 +374,24 @@ aws apprunner create-auto-scaling-configuration \
 aws apprunner create-service --cli-input-json file://<filled-in apprunner-service.json>
 ```
 
-### 7.7 Closing the loop
+### 7.7 Preview deployments
+
+Every Vercel preview gets its own origin, so the bucket's CORS carries
+`https://tailored-task-*.vercel.app` alongside the production domain. S3 allows
+exactly **one** `*` per origin string, and scoping it to this project's prefix is
+deliberate — `https://*.vercel.app` would let a page on anybody's Vercel app make
+browser requests to the bucket. Small risk, since every operation still needs a
+valid presigned signature, but it costs nothing to keep it narrow.
+
+**`CORS_ORIGINS` on the API needs no equivalent, and cannot have one.** It is an
+exact-match list, and it does not matter: the browser never calls the API
+cross-origin. It calls `/api/...` on the Vercel origin and Vercel rewrites that to
+App Runner **server-side**, so there is no preflight and no CORS check at all.
+`CORS_ORIGINS` only governs a client calling the API host directly — local
+development with `VITE_API_URL` set, or a non-browser client. That is why
+previews reach the API without being listed anywhere.
+
+### 7.8 Closing the loop
 
 Both ends need the other's origin, so this comes last:
 
