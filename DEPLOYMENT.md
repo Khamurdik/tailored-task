@@ -119,7 +119,7 @@ pnpm install
 pnpm --filter @dataroom/shared build   # both apps import this; build it first
 docker compose -f docker-compose.test.yml up -d   # Postgres 18 on :5433, MinIO on :9000
 pnpm db:migrate                        # applies migrations
-pnpm db:seed                           # provisions SEED_USERS
+pnpm db:seed                           # provisions SEED_USERS, and the demo room
 pnpm dev                               # api on :3000, web on :5173
 ```
 
@@ -168,7 +168,7 @@ happened to start.
 | `pnpm declared` | Registry summary: implemented / declared, by suite |
 | `pnpm db:migrate` | `prisma migrate dev` — applies migrations **and seeds** |
 | `pnpm db:deploy` | `prisma migrate deploy` — applies migrations, **does not seed** |
-| `pnpm db:seed` | The seed alone. Safe to re-run |
+| `pnpm db:seed` | The seed alone — accounts **and** the demo room. Safe to re-run |
 | `pnpm db:reset` | Drops and rebuilds. **Never in production** |
 | `pnpm test:e2e` | The Playwright journeys. Prepares its own database, then starts the API and the web app |
 
@@ -244,6 +244,36 @@ than creating one.
 The seed is **idempotent**: re-running it adds new users, leaves existing ones
 alone, and does not rewrite a password unless `SEED_FORCE_RESET=true`.
 
+### The demo room is seeded with them
+
+The same step provisions the tree, the two user grants and the public link that
+[`REVIEW.md`](REVIEW.md) is written against — `Project Meridian`,
+`Project Northwind`, and the `/s/VBHV2KVG5Y9F5WZ9` link. Until 2026-08-19 that
+dataset existed only as rows built by hand against the live deployment, so a
+rebuilt database came up with accounts and an empty room list, and the two node
+links printed in `REVIEW.md` pointed at nothing.
+
+The fixture is [`apps/api/prisma/demo-tree.ts`](apps/api/prisma/demo-tree.ts) —
+data only, with every id fixed, because two of them are published links and the
+rest are what makes a re-seed recognise its own rows instead of building a
+second room beside the first.
+
+**There is no `SEED_DEMO` flag. The gate is the owner accounts.** Every node
+hangs off a room owned by `ana.ruiz@example.com` or `bo.lindqvist@example.com`,
+so a deployment whose `SEED_USERS` does not name both gets one line —
+`Demo room skipped — … is not provisioned.` — and no rows. A flag would be a
+second switch saying the same thing, and two switches eventually disagree.
+
+Two properties worth knowing before running it against something you care about:
+
+- **It creates what is missing and overwrites nothing.** A node a reviewer has
+  renamed, moved or deleted stays as it is, and its children are placed under
+  where the row *actually* is rather than where the fixture predicts.
+- **No bytes are uploaded.** The file rows are real, sized and listed, and the
+  whole permission matrix works — but nothing was PUT to the bucket, so
+  downloading a seeded PDF gets a presigned URL that 404s. Upload through the
+  app as Ana to get a file with bytes behind it.
+
 ### Why this cannot be a SQL migration
 
 Two independent reasons, both load-bearing:
@@ -295,6 +325,11 @@ to be described here does not exist.
 pnpm db:seed          # run it twice; the second run should report "unchanged"
 docker exec dataroom-postgres \
   psql -U postgres -d dataroom -tAc "select email, is_admin from users order by email"
+
+# The demo room: 13 nodes and 3 grants, and a second run reporting "exists"
+docker exec dataroom-postgres \
+  psql -U postgres -d dataroom -tAc \
+  "select (select count(*) from nodes), (select count(*) from shares)"
 ```
 
 A second run reporting `created` rather than `unchanged` means the idempotency

@@ -77,6 +77,10 @@ Project Northwind           owner: Bo
     └── northwind-summary.pdf
 ```
 
+Since 2026-08-19 this tree is **provisioned by the seeder** rather than built by
+hand, from a fixed fixture — so the ids, the short code and everything below are
+reproducible from an empty database rather than being facts about one deployment.
+
 Grants, in full — there are only three:
 
 | # | On | Kind | To | Role |

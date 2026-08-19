@@ -50,6 +50,14 @@ Project Northwind           (owned by Bo)
     └── northwind-summary.pdf
 ```
 
+**This dataset is seeded, not hand-built.** `pnpm db:seed` provisions the six
+accounts *and* this exact tree — the same node ids, the same short code — from
+[`apps/api/prisma/demo-tree.ts`](apps/api/prisma/demo-tree.ts), so every link on
+this page survives a rebuilt database. Re-running it changes nothing that is
+already there. One gap worth knowing before clicking a PDF: the seeder writes no
+bytes to the bucket, so a *seeded* file downloads to a 404. Upload one as Ana
+(step 5 below) to exercise the real path.
+
 ---
 
 ## What actually happens
