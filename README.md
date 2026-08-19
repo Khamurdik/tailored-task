@@ -1,4 +1,229 @@
-# Data Room — module skeleton
+# Data Room
+
+A virtual data room — the due-diligence kind. An owner uploads documents into a
+folder tree and grants outsiders scoped, revocable, read-only access to part of
+it. NestJS 11 + Prisma 6 + Postgres 18 behind React 19 + Vite 8, in one pnpm
+workspace.
+
+| Looking for | Go to |
+| --- | --- |
+| **Running it on your laptop** | §1 below — five commands, and no account to create anywhere |
+| **Who to sign in as** | §2 below |
+| **What needs credentials that are not in this repo** | §3 below |
+| The live deployment and a five-minute walkthrough | [`REVIEW.md`](REVIEW.md) |
+| The system as a whole | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| What was built, and an honest list of what is missing | [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) |
+
+---
+
+## 1. Run it locally
+
+### Prerequisites
+
+| | Version | Note |
+| --- | --- | --- |
+| Node | **26.7.0** | `.nvmrc` pins it. `>=24.15.0` also works — that is the `engines` floor |
+| pnpm | **11.x** | `packageManager` pins 11.22.0, and pnpm 10+ self-switches to it |
+| Docker | any recent | Runs Postgres and the bucket. Nothing else needs it |
+
+Corepack was unbundled from Node 25+, so on 26 pnpm is installed with npm. Under
+nvm, global packages are per-Node-version — install it while 26 is active.
+
+```bash
+nvm install 26.7.0 && nvm use 26.7.0
+npm i -g pnpm
+```
+
+### The five steps
+
+```bash
+pnpm install                                      # 1. dependencies (also runs prisma generate)
+pnpm --filter @dataroom/shared build              # 2. both apps import this package from dist/
+
+cp apps/api/.env.example apps/api/.env            # 3. configuration — one edit, below
+cp apps/web/.env.example apps/web/.env.local
+
+docker compose -f docker-compose.test.yml up -d   # 4. Postgres on :5433, MinIO on :9000
+pnpm db:migrate && pnpm db:seed                   #    schema, then accounts and the demo room
+
+pnpm dev                                          # 5. api on :3000, web on :5173
+```
+
+Then open **http://localhost:5173** and sign in as one of the accounts in §2.
+
+### The one edit
+
+The two JWT placeholders in `.env.example` are deliberately under the
+16-character minimum, so a freshly copied file **refuses to boot** and names them
+rather than starting up with `replace-me` signing your tokens. Generate real
+ones:
+
+```bash
+sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=\"$(openssl rand -base64 32)\"|; \
+        s|^JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=\"$(openssl rand -base64 32)\"|" \
+       apps/api/.env
+```
+
+macOS `sed` wants `-i ''` rather than `-i`. Or open the file and paste two
+different values from `openssl rand -base64 32`.
+
+**Nothing else in either example file needs changing.** Both ship configured for
+the local stack: the database URL matches the compose file, the S3 block points
+at the MinIO container using that container's own credentials, Google sign-in is
+off, and uploads are `pdf-only`.
+
+### Three things that are easy to get wrong
+
+- **Postgres is on `5433`, not 5432.** The compose file avoids the default on
+  purpose: a clash with a Postgres you already run surfaces as authentication
+  errors against somebody else's database rather than as a failure to start.
+- **`pnpm --filter @dataroom/shared build` is neither optional nor automatic.**
+  Both apps resolve that package through `dist/`, and a missing one shows up as a
+  module-resolution error in whichever app you happened to start.
+- **`pnpm db:migrate` does not always seed.** It seeds when it creates or resets
+  the database, and skips it when it is only applying a migration to an existing
+  one. `pnpm db:seed` is idempotent, so running it every time costs nothing.
+
+### Checking it came up
+
+```bash
+curl -s localhost:3000/health
+# {"status":"ok"}
+
+curl -s localhost:3000/shares/resolve -H 'x-share-token: VBHV2KVG5Y9F5WZ9'
+# {"rootNodeId":"a8ca712c-…","role":"viewer","expiresAt":null}   ← the public link
+```
+
+Every command in this section was run start to finish on 2026-08-19, from a
+copied `.env.example` with nothing in it but the two generated secrets —
+including an upload through MinIO and the download back out of it.
+
+---
+
+## 2. Accounts you can use locally
+
+`pnpm db:seed` provisions six accounts from `SEED_USERS` in `apps/api/.env`,
+together with the demo tree they hang off. **There is no sign-up:** the seeder is
+the only thing in this system that creates a user.
+
+**Every account uses the same password — `review-2026-meridian`.** It is a demo
+credential on `example.com` addresses, which RFC 2606 reserves and which receive
+no mail; this system sends no email at all. Change it in `SEED_USERS` and re-seed
+with `SEED_FORCE_RESET=true` if you would rather it were something else.
+
+| Sign in as | Who they are | What they demonstrate |
+| --- | --- | --- |
+| `ana.ruiz@example.com` | Owner of **Project Meridian** | The whole room — upload, share, revoke. Cannot see Bo's room at all |
+| `bo.lindqvist@example.com` | Owner of **Project Northwind** | A second, unrelated room: owners are isolated from each other |
+| `cara.mensah@example.com` | Invited to **Financials** only | One folder of somebody else's room, and nothing above or beside it |
+| `dmytro.kovalenko@example.com` | Invited to **Legal** only | A different slice of the *same* room — two grants that never overlap |
+| `erik.sandberg@example.com` | Signed in, granted nothing | Authentication is not authorization |
+| `admin@example.com` | Administrator | The only account that reaches `/jobs`. Non-admins get 404 there, not 403 |
+
+And **no account at all**: open http://localhost:5173/s/VBHV2KVG5Y9F5WZ9 in a
+private window. The short code is fixed by the seed fixture, so it is the same on
+every machine.
+
+> The deployed instance in [`REVIEW.md`](REVIEW.md) has `khamurdik@gmail.com` as
+> its administrator instead of `admin@example.com`. That is the only difference
+> between the two casts.
+
+The tree those accounts sit in:
+
+```
+Project Meridian            (Ana)
+├── Financials              → shared with Cara
+│   ├── q4-report.pdf
+│   └── cap-table.pdf
+├── Legal                   → shared with Dmytro
+│   └── master-agreement.pdf
+├── HR                      → shared with nobody
+│   └── headcount.pdf
+└── Teaser                  → public link, /s/VBHV2KVG5Y9F5WZ9
+    └── teaser.pdf
+
+Project Northwind           (Bo)
+└── Diligence
+    └── northwind-summary.pdf
+```
+
+Two empty screens that are not bugs, worth knowing before you judge them:
+
+- **Cara and Dmytro land on an empty room list.** `GET /nodes` returns only rooms
+  you *own*, and they own none — there is no "shared with me" view in this build,
+  so an invited user reaches their folder by direct link. Cara's is
+  http://localhost:5173/nodes/d681640f-9005-4fb9-864d-0a307a23e266; the node ids
+  are fixed by the seed fixture too. Then try Dmytro's folder,
+  `52da7215-5e2c-4449-849c-3bb5813fda51`, while still signed in as Cara — the
+  same "not available" screen an invented id gives.
+- **Erik's list is empty for the opposite reason:** he has access to nothing at
+  all. The two look identical from the outside, which is itself a product gap.
+
+**Seeded PDFs have no bytes behind them.** The seeder creates the file rows —
+real names, real sizes, the whole permission matrix — but writes nothing to the
+bucket, so opening one gets a presigned URL that 404s. Upload a PDF as Ana to
+exercise the real path: it goes from the browser straight to MinIO, and the API
+never touches the bytes.
+
+---
+
+## 3. What needs credentials, and what happens without them
+
+**No credential of mine is in this repository.** `.env` and `.env.local` are
+gitignored and only the `.example` files are tracked. What those contain is
+either a placeholder that refuses to boot — the two JWT secrets — or the MinIO
+container's own username and password, which sit in plain sight in
+`docker-compose.test.yml` and open nothing outside `localhost`.
+
+So a checkout runs the whole product without asking me, AWS, or Google for
+anything:
+
+| | Locally | What it would take |
+| --- | --- | --- |
+| Password sign-in, sessions, token refresh | **works** | — |
+| Browse, create, rename, move, delete, breadcrumbs | **works** | — |
+| Upload — multiple files, drag-and-drop, per-file progress | **works**, MinIO is the bucket | — |
+| PDF preview and download | **works** for files you uploaded | — |
+| Public links, per-user grants, revoke, cascade | **works** | — |
+| Admin `/jobs`: six scheduled jobs, each triggerable by hand | **works** as `admin@example.com` | — |
+| **Google sign-in** | **absent** — the button is not rendered at all, and password login is unaffected | Your own Google OAuth **web client id** in `GOOGLE_CLIENT_ID` (api) and `VITE_GOOGLE_CLIENT_ID` (web). Both are public identifiers rather than secrets; mine are simply not in the repo |
+| **Opening a *seeded* PDF** | **404** | Nothing — upload your own file. See the end of §2 |
+| **Uploads surviving `docker compose down`** | **lost** | Nothing — MinIO's bucket is tmpfs on purpose, so a restart is a clean bucket |
+| **Deploying your own copy** | — | Your own AWS account (RDS, App Runner, S3) and Vercel project. The runbook is [`DEPLOYMENT-CLOUD.md`](DEPLOYMENT-CLOUD.md) |
+| **Changing the deployment linked from [`REVIEW.md`](REVIEW.md)** | — | Not possible; that one is mine. It is there to be clicked, not redeployed |
+
+Google sign-in being optional is a design decision rather than an omission: it
+*links* to an already-seeded account by verified email and never creates one, so
+a checkout without Google credentials loses nothing but the button. Set both
+variables and it appears; leave either blank and it does not.
+
+### The front end with no backend at all
+
+The web app runs with no API, no database and no bucket, answering every request
+from fixtures held in memory. The swap happens at the axios *adapter*, so
+interceptors, the 401-refresh path, schema parsing and react-query all still run
+for real:
+
+```bash
+sed -i 's/^VITE_API_MODE=live/VITE_API_MODE=mock/' apps/web/.env.local
+pnpm dev:web        # http://localhost:5173
+```
+
+Sign in as `ana@example.com` / `change-me-now` or `bo@example.com` /
+`change-me-too` — fixture accounts, separate from the seeded ones above, whose
+passwords live in a committed file. A production build forces this mode off.
+Details in [`DEPLOYMENT.md`](DEPLOYMENT.md) §3.
+
+### Everything else about running it
+
+[`DEPLOYMENT.md`](DEPLOYMENT.md) is the full local reference: every environment
+variable that needs a decision, provisioning users by hand, verifying a seed, and
+the constraints that bite — one API instance, unrevocable presigned GETs, tokens
+in `localStorage`.
+
+---
+
+## The module skeleton
 
 Every directory holds a `TODO.md` that defines what that module owns, what it may
 depend on, and what "done" means for it. Those files were written before the code
@@ -8,10 +233,6 @@ and are kept current with it: ticked boxes are what exists, and each carries an
 **All twelve backend modules and all seven frontend features are built.** What
 remains is depth rather than shape — see
 [`HANDOFF-IMPLEMENTATION.md`](HANDOFF-IMPLEMENTATION.md) §7.
-
-**Reviewing this rather than building on it?** Start with
-[`REVIEW.md`](REVIEW.md) — a live deployment, six accounts, and a dataset built
-so the permission model can be checked by clicking.
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first — it is the only
 document that describes the system as a whole. Everything else is scoped to a

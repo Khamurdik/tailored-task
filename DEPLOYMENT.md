@@ -101,7 +101,7 @@ a boot log is the least private place in a deployment.
 | `SEED_USERS` | A JSON array. This is the **only** way an account is created — see §4 |
 | `GOOGLE_CLIENT_ID` | Optional. Leave blank and the button is not rendered; password login still works |
 | `UPLOAD_FILE_POLICY` | `pdf-only` (default) or `all-files`. The default is the restrictive one on purpose |
-| `S3_ENDPOINT` | Unset for real AWS. Set to `http://localhost:9000` for the MinIO in `docker-compose.test.yml`, which is what makes uploads work with no AWS account |
+| `S3_ENDPOINT` | **Set to `http://localhost:9000` in the example file**, pointing at the MinIO in `docker-compose.test.yml` — which is what makes uploads work with no AWS account. Unset it for real AWS |
 | `JOBS_SCHEDULER_ENABLED` | Must be true on **exactly one** instance — see §6 |
 | `CORS_ORIGINS` | Comma-separated. No cookies means no credentialed CORS |
 
@@ -175,7 +175,8 @@ happened to start.
 ### Uploading locally
 
 Uploads go **direct to the bucket** from the browser, so they need one. The
-compose file runs MinIO for exactly this; point the API at it:
+compose file runs MinIO for exactly this, and since 2026-08-19 `.env.example`
+ships pointing at it — so a freshly copied file needs no S3 edit at all:
 
 ```
 S3_ENDPOINT=http://localhost:9000
@@ -185,8 +186,13 @@ AWS_SECRET_ACCESS_KEY=dataroom-secret
 AWS_REGION=us-east-1
 ```
 
-Leave `S3_ENDPOINT` unset and the adapter talks to real AWS, which is the
-deployed configuration. The bucket is created by the `minio-init` container on
+Those credentials are the container's own, hardcoded in the compose file, and
+open nothing outside localhost. `S3_FORCE_PATH_STYLE` needs no setting — it
+defaults to true whenever an endpoint is set.
+
+Unset `S3_ENDPOINT` and the adapter talks to real AWS, which is the
+deployed configuration; those five values then name a real bucket and an IAM
+user's keys. The bucket is created by the `minio-init` container on
 `docker compose up`, and its contents live in tmpfs — a restart is a clean
 bucket, which is what you want locally and never in production.
 
